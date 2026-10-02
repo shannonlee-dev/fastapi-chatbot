@@ -128,7 +128,8 @@ Content-Type: application/json
 {"message":"FastAPI의 장점을 설명해주세요."}
 ```
 
-- `message`는 문자열 필수이며, 앞뒤 공백 제거 결과가 1~1000자여야 합니다.
+- `message`는 문자열 필수이며, 앞뒤 공백 제거 결과가 Unicode code point 기준 1~1000자여야 합니다.
+  Python `len`과 같은 기준이며 UI counter·전송 검증도 이를 따릅니다.
 - 필드 누락·잘못된 자료형·잘못된 JSON은 `422 validation_error`입니다.
 - 공백 입력과 1000자 초과 문자열은 `400 validation_error`입니다.
 

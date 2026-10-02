@@ -177,14 +177,17 @@ Browser의 화면 표시만으로 접근을 허용하지 않으며, 인증과 �
 ### 입력 form
 
 - 질문 `textarea`, 전송 button, form 오류 영역을 제공합니다.
-- 질문 control에는 `required`와 `maxlength="1000"`을 적용합니다.
+- 질문 control에는 `required`와 `maxlength="2000"`을 적용합니다. Browser의 HTML 길이 제한은
+  UTF-16 code unit 기준이므로 Unicode code point 1000개의 이모지도 입력할 수 있게 합니다.
 - 질문 아래에는 `현재 글자 수 / 1000` 형식의 counter를 항상 표시하고 `aria-describedby`로 질문
   control과 연결합니다. Counter는 매 입력을 live announcement하지 않습니다.
 - 질문 `textarea`는 2줄 기준으로 시작합니다. Desktop에서는 기존 `7rem` 최소 높이를 유지하고,
   `30rem` 이하 mobile viewport에서는 `4.75rem` 최소 높이로 줄여 대화 기록 영역을 확보합니다.
-- `maxlength="1000"`은 일반적인 입력 과정에서 1000자 초과 작성을 제한합니다. JavaScript의
-  길이 검증은 programmatic value 변경처럼 HTML constraint를 우회한 상황을 위한 방어입니다.
-- 제출 시 JavaScript가 값을 `trim()`하고, 결과가 1~1000자가 아니면 API를 호출하지 않습니다.
+- Counter와 제출 검증은 API의 Python 문자열 길이와 같은 Unicode code point 기준입니다.
+  JavaScript는 `Array.from(value).length`로 계산합니다. 결합 문자나 이모지 조합은 화면의 한 글자와
+  여러 code point가 될 수 있습니다.
+- HTML `maxlength`는 입력 크기의 상한이며 정확한 1000자 검증을 대신하지 않습니다.
+  제출 시 JavaScript가 값을 `trim()`하고, 결과가 1~1000 code point가 아니면 API를 호출하지 않습니다.
 - 공백 입력에는 `질문을 입력해주세요.`, 1000자 초과 입력에는
   `질문은 1000자 이하로 입력해주세요.`를 표시합니다.
 - 유효한 질문은 공백을 제거한 전송값을 별도로 보관한 뒤 질문 control에서 즉시 제거합니다.

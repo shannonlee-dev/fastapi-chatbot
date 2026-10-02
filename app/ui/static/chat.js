@@ -128,7 +128,7 @@
 
   // Reflect the raw textarea length without repeatedly announcing every keypress.
   function updateCharacterCount() {
-    characterCount.textContent = `${messageInput.value.length} / ${MAX_MESSAGE_LENGTH}`;
+    characterCount.textContent = `${Array.from(messageInput.value).length} / ${MAX_MESSAGE_LENGTH}`;
   }
 
   // Return one normalized question or report its client-side validation error.
@@ -138,7 +138,7 @@
       setFormError("질문을 입력해주세요.");
       return null;
     }
-    if (question.length > MAX_MESSAGE_LENGTH) {
+    if (Array.from(question).length > MAX_MESSAGE_LENGTH) {
       setFormError("질문은 1000자 이하로 입력해주세요.");
       return null;
     }

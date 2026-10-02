@@ -199,6 +199,28 @@ def test_post_chat_requires_login(client: TestClient) -> None:
 
 
 @pytest.mark.parametrize(
+    ("count", "expected_status"), [(501, 200), (1000, 200), (1001, 400)]
+)
+def test_chat_emoji_length_matches_ui_code_point_boundary(
+    authenticated_client: TestClient,
+    monkeypatch: pytest.MonkeyPatch,
+    count: int,
+    expected_status: int,
+) -> None:
+    questions: list[object] = []
+
+    async def fake_process_chat(**kwargs: object) -> ChatResult:
+        questions.append(kwargs["message"])
+        return ChatResult(1, "answer", datetime(2026, 8, 7, tzinfo=UTC))
+
+    monkeypatch.setattr(router_module, "process_chat", fake_process_chat)
+    question = "😀" * count
+    response = authenticated_client.post("/api/chat", json={"message": question})
+    assert response.status_code == expected_status
+    assert questions == ([question] if expected_status == 200 else [])
+
+
+@pytest.mark.parametrize(
     ("payload", "detail"),
     [
         ({"message": "   "}, "질문을 입력해주세요."),

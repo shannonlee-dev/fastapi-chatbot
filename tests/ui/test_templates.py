@@ -228,7 +228,7 @@ def test_chat_template_keeps_empty_history_and_complete_form_contract() -> None:
     assert "novalidate" in form
     assert label is not None
     assert textarea["rows"] == "2"
-    assert textarea["maxlength"] == "1000"
+    assert textarea["maxlength"] == "2000"
     assert textarea["aria-describedby"] == "chat-character-count chat-form-error"
     assert "required" in textarea
     assert "role" not in character_count

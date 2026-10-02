@@ -1,0 +1,11 @@
+{
+  "name": "codyssey-chat-ui-tests",
+  "private": true,
+  "engines": { "node": ">=22" },
+  "scripts": {
+    "test:ui": "uv run --frozen python -m tests.browser.run"
+  },
+  "devDependencies": {
+    "jsdom": "26.1.0"
+  }
+}
