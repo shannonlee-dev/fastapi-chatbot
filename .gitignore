@@ -27,6 +27,7 @@ id_ed25519
 
 # Logs
 *.log
+*.log.*
 *.out
 *.err
 

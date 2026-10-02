@@ -6,6 +6,7 @@ from typing import Annotated
 
 from fastapi import APIRouter, Depends, Form, Request, status
 from fastapi.responses import HTMLResponse, RedirectResponse, Response
+from pydantic import ValidationError
 from sqlalchemy.orm import Session
 
 from app.auth.dependencies import (
@@ -21,8 +22,14 @@ from app.auth.service import (
     authenticate_user,
     register_user,
 )
-from app.chat.service import list_chat_exchange_history
+from app.chat.errors import ChatError
+from app.chat.http import chat_error_to_app_error
+from app.chat.schemas import ChatRequest
+from app.chat.service import list_chat_exchange_history, process_chat
+from app.core.config import Settings, get_settings
 from app.core.database import get_db
+from app.core.i18n import get_message
+from app.core.request_id import get_request_id
 from app.ui.responses import prevent_browser_caching
 from app.ui.templating import templates
 
@@ -152,6 +159,72 @@ def get_chat(
 ) -> Response:
     """Render the authenticated user's chat history and input form."""
 
+    return _render_chat(request=request, authenticated_user=authenticated_user, db=db)
+
+
+@router.post("/chat", response_class=HTMLResponse)
+async def post_chat_form(
+    request: Request,
+    authenticated_user: Annotated[
+        AuthenticatedUser, Depends(require_authenticated_user)
+    ],
+    db: Annotated[Session, Depends(get_db)],
+    app_settings: Annotated[Settings, Depends(get_settings)],
+    message: Annotated[str, Form()] = "",
+) -> Response:
+    """기본 Browser form을 처리하고 성공 후 GET으로 이동한다."""
+
+    try:
+        payload = ChatRequest(message=message)
+    except ValidationError as error:
+        key = str(error.errors()[0]["type"])
+        return _render_chat(
+            request=request,
+            authenticated_user=authenticated_user,
+            db=db,
+            error=get_message(
+                key=key, accept_language=request.headers.get("accept-language")
+            ),
+            draft=message,
+            status_code=400,
+        )
+    try:
+        await process_chat(
+            user_id=authenticated_user.user_id,
+            message=payload.message,
+            request_id=get_request_id(request),
+            user_agent=request.headers.get("user-agent", "")[:512] or None,
+            db=db,
+            app_settings=app_settings,
+        )
+    except ChatError as error:
+        mapped = chat_error_to_app_error(error)
+        response = _render_chat(
+            request=request,
+            authenticated_user=authenticated_user,
+            db=db,
+            error=get_message(
+                key=mapped.code, accept_language=request.headers.get("accept-language")
+            ),
+            draft=payload.message,
+            status_code=mapped.status_code,
+        )
+        response.headers.update(mapped.headers)
+        return response
+    return _redirect_to("/chat")
+
+
+def _render_chat(
+    *,
+    request: Request,
+    authenticated_user: AuthenticatedUser,
+    db: Session,
+    error: str | None = None,
+    draft: str = "",
+    status_code: int = 200,
+) -> Response:
+    """본인 history와 안전한 form 상태만 SSR context로 전달한다."""
+
     chat_exchanges = list_chat_exchange_history(
         user_id=authenticated_user.user_id,
         db=db,
@@ -163,7 +236,9 @@ def get_chat(
             context={
                 "chat_exchanges": chat_exchanges,
                 "is_admin": authenticated_user.is_admin,
+                **({"error": error, "draft": draft} if error is not None else {}),
             },
+            status_code=status_code,
         )
     )
 

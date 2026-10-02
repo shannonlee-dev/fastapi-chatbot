@@ -22,7 +22,7 @@ SQLite                                OpenAI API
 | Component | 역할 |
 | --- | --- |
 | Browser | 회원가입·login, 질문 입력, AI 답변과 본인 기록 확인, 관리자 운영 metadata 조회 |
-| `app/main.py` | FastAPI application 생성, SessionMiddleware와 router 등록, DB·관리자 초기화 조립 |
+| `app/main.py` | FastAPI application 생성, middleware·통합 Router·공통 handler 연결, DB·관리자 초기화 조립 |
 | `app/auth` | User, 회원가입·login·logout, password 검증, 인증·관리자 dependency |
 | `app/chat` | 질문 검증, OpenAI 호출, 사용자 ChatExchange 저장·조회 |
 | `app/admin` | 관리자 전용 route와 운영 metadata 조회 |
@@ -212,7 +212,7 @@ from app.auth.dependencies import require_admin
   제공합니다. 표시 field는 [DB schema 계약](db/DB.md)을 따릅니다.
 - Admin은 별도 JSON API, 수정·삭제 CRUD, 고급 검색·pagination, 별도 운영 log table, 별도
   역할·권한 table을 제공하지 않습니다. 사용자 역할은 `users.role`을 사용합니다.
-- Main은 `admin_router` 등록만 담당합니다.
+- Admin Router는 `app/main.py`의 `_register_routes()`를 통해 Main에 연결합니다.
 
 ### UI·Main integration
 
@@ -225,7 +225,8 @@ from app.auth.dependencies import require_admin
   이미 소유한 `GET /admin/logs`를 중복 등록하지 않습니다.
 - Admin Router는 권한 dependency와 Admin Service를 연결해 read-only 운영 metadata를 UI template에
   전달합니다.
-- `app/main.py`는 `app/ui/router.py`의 router를 한 번 등록하고 `app/ui/static`을 `/static`에 mount합니다.
+- `app/main.py`는 `_register_routes(application)` 한 번으로 통합 Router를 등록하고
+  `app/ui/static`을 `/static`에 mount합니다.
   UI asset은 인증 없이 조회할 수 있지만 template과 JavaScript 외의 business API를 제공하지 않습니다.
 - `app/main.py`는 UI·Chat·Admin router, static mount, SessionMiddleware, logging, health,
   `init_db()`를 연결하고, DB 초기화 후 요청을 받기 전에 `create_app()`이 선택한 실행 설정을 전달하여
@@ -257,7 +258,27 @@ Auth가 제공하는 helper로 session 사용자 ID를 저장하거나 삭제하
 - 다른 사용자의 기록과 실패 기록은 AI 문맥에서 제외
 - 사용자 기록은 `/chat` 화면과 본인 소유 record만 반환하는 대화 기록 API에서 조회
 - 관리자 수정·삭제 기능과 별도 log table 없음
-- 초기 버전은 OpenAI 자동 재시도 없음
+- OpenAI Adapter가 일시적인 429만 최대 2회 재시도하며 Browser와 SDK는 자동 retry하지 않음
 - timeout·API 오류·비정상 OpenAI response에는 생성된 대체 답변을 사용하지 않고 실패
   record를 저장한 뒤 API layer가 오류 응답으로 변환
 - schema와 persistence 제약의 상세 계약은 [DB schema 계약](db/DB.md)을 따름
+
+## Chat 처리 경계와 공통 운영 기능
+
+- `app/core/errors.py`, `schemas.py`, `http.py`, `i18n.py`는 module 공통 HTTP 오류 계약을
+  소유합니다. `get_exception_handlers()`가 공통 handler를 하나의 mapping으로 제공하고
+  Main은 이를 FastAPI 생성자의 `exception_handlers`에 전달합니다.
+- `app/chat/errors.py`는 HTTP에 독립적인 domain 오류를 정의하고 `app/chat/http.py`는 이를
+  JSON Router와 SSR Router가 공유하는 status·code·header로 변환합니다.
+- `app/main.py`의 `_register_routes()`는 Admin·Chat·UI Router를 하나의 `APIRouter`로 묶어
+  application에 한 번 연결합니다. `Allow` header를 위한 resource별 method registry도
+  이 조립 단계에서 구성합니다.
+- JSON Router와 UI Router는 동일한 Chat Service를 호출합니다. UI Router는 business 로직을
+  복제하지 않고 form validation, safe projection, template, PRG를 담당합니다.
+- `create_app()`이 선택한 Settings를 application state에 보관하고 Router dependency가 Service에
+  전달합니다. OpenAI model·timeout·key가 전역 설정으로 잘못 되돌아가지 않습니다.
+- Core logging은 request ID를 ContextVar로 연결하고 application event만 JSON line 파일로
+  저장합니다. HTTP 수신·완료, AI retry·성공·실패, DB 저장 결과와 안전한 예외 type을 기록합니다.
+  질문·답변, User-Agent, cookie·key, query string, 원본 예외·stack은 기록하지 않습니다.
+- 파일 크기는 5 MiB, backup은 3개입니다. Console logging은 유지합니다. 단일 process 운영을
+  기준으로 하며 다중 worker는 별도 log 수집 구성이 필요합니다.

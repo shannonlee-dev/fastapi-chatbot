@@ -10,6 +10,8 @@
     "internal_error",
     "openai_api_error",
     "openai_timeout",
+    "openai_rate_limited",
+    "openai_quota_exceeded",
   ]);
   // ISO 8601 shape accepted for a successful response timestamp.
   const ISO_TIMESTAMP_PATTERN =
@@ -246,7 +248,7 @@
 
   // Send one question and parse the response body within the same error boundary.
   async function requestChat(question) {
-    const response = await fetch("/api/chat", {
+    const response = await fetch("/api/chat-exchanges", {
       method: "POST",
       headers: {
         Accept: "application/json",
@@ -316,6 +318,14 @@
   }
 
   // Start the Chat request flow from the form's submit event.
+  document.querySelectorAll("[data-chat-suggestion]").forEach((button) => {
+    button.hidden = false;
+    button.addEventListener("click", () => {
+      messageInput.value = button.dataset.chatSuggestion;
+      updateCharacterCount();
+      messageInput.focus();
+    });
+  });
   form.addEventListener("submit", handleSubmit);
   messageInput.addEventListener("input", updateCharacterCount);
   messageInput.addEventListener("keydown", handleMessageKeydown);

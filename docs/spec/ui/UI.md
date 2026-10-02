@@ -7,10 +7,10 @@ HTTP status·request·response·오류 `code`는 [API 계약](../api/API.md), mo
 
 ## 1. 범위와 기술 경계
 
-- `app/ui`가 Jinja2로 HTML을 server rendering하고 Browser JavaScript가 `POST /api/chat`을
+- `app/ui`가 Jinja2로 HTML을 server rendering하고 Browser JavaScript가 `POST /api/chat-exchanges`를
   호출합니다.
 - Frontend는 별도 build 과정 없이 HTML, CSS, vanilla JavaScript로 구성합니다.
-- 초기 버전에는 React 등 UI framework, 상태관리 library, toast package, streaming, 자동 retry,
+- 초기 버전에는 React 등 UI framework, 상태관리 library, toast package, streaming, Browser 자동 retry,
   별도 animation library를 도입하지 않습니다.
 - 구체적인 색상, spacing, typography 값은 구현 세부사항입니다. 다만 모든 화면에서 같은 시각
   규칙을 사용하고 상태·focus를 명확히 구분해야 합니다.
@@ -49,7 +49,7 @@ redirect, request와 response schema는 [API 계약](../api/API.md)을 따릅니
 - `chat_exchanges` template variable에는 `chat_exchange_id`, `question`, `answer`, `status`,
   `created_at` field가 포함됩니다.
 - `is_admin: bool` template variable로 관리자 navigation rendering 여부를 결정합니다.
-- Browser JavaScript는 `POST /api/chat`을 호출해 pending Chat 항목을 실제 답변 또는 오류로
+- Browser JavaScript는 `POST /api/chat-exchanges`를 호출해 pending Chat 항목을 실제 답변 또는 오류로
   교체합니다. 사용하는 JSON field와 오류 contract는 [API 계약](../api/API.md)을 따릅니다.
 
 ### `/admin/logs`
@@ -197,6 +197,16 @@ Browser의 화면 표시만으로 접근을 허용하지 않으며, 인증과 �
 - IME composition 중인 Enter는 제출하지 않습니다. Keyboard 제출 동작은 유지하지만 별도 입력 방식
   helper 문구는 표시하지 않습니다.
 
+### SSR과 대화 시작
+
+- 질문 form은 `method="post" action="/chat"`을 사용해 JavaScript 없이 전송할 수 있습니다.
+  성공 후 `303 /chat`으로 이동해 새로고침에 의한 form 재전송을 막습니다.
+- JavaScript는 같은 form을 점진적으로 향상시켜 pending 대화와 다음 draft 유지 기능을 제공합니다.
+- SSR 검증 실패는 안전한 오류와 escape한 draft를 표시합니다. AI 실패는 저장된 실제 history, 전송한 질문 draft와
+  안전한 안내를 함께 rendering하고 사용자에게 자동 재전송하지 않습니다.
+- 빈 history에는 인사와 대화 시작 예시를 제공합니다. 예시 button은 JavaScript가 활성화할 때만
+  표시하고, 클릭하면 draft만 채우고 focus를 이동합니다. 자동 전송하지 않습니다.
+
 ### Browser 상태 전이
 
 | 상태 | 동작 |
@@ -204,8 +214,8 @@ Browser의 화면 표시만으로 접근을 허용하지 않으며, 인증과 �
 | Idle | 진행 중인 request가 없고 질문 control과 전송 button을 사용할 수 있음 |
 | Submitting | 전송 button을 비활성화하고 질문을 오른쪽에 즉시 추가하며 왼쪽 AI 답변 위치에 `답변 생성 중…`을 표시하고 추가 submit을 무시함 |
 
-- 한 번에 하나의 `POST /api/chat` request만 진행할 수 있습니다.
-- Request는 `fetch("/api/chat")`에 `method: "POST"`, `Content-Type: application/json`,
+- 한 번에 하나의 `POST /api/chat-exchanges` request만 진행할 수 있습니다.
+- Request는 `fetch("/api/chat-exchanges")`에 `method: "POST"`, `Content-Type: application/json`,
   `Accept: application/json`, `credentials: "same-origin"`을 사용하고 body는 정확히
   `{"message": trimmedQuestion}`입니다.
 - Submitting 중에도 질문 control은 활성 상태로 유지해 다음 질문 draft를 작성할 수 있습니다.
@@ -231,19 +241,19 @@ Browser의 화면 표시만으로 접근을 허용하지 않으며, 인증과 �
 - AI 답변 위치의 Loading 영역에는 `aria-live="polite"`, 즉시 확인해야 하는 form 오류와 실패
   Chat 항목에는 `role="alert"`를 적용합니다.
 - 성공은 별도 status 문구 없이 pending Chat 항목의 Loading을 실제 답변으로 교체해 표시합니다.
-- 자동 retry는 하지 않습니다.
+- Browser 자동 retry는 하지 않습니다. Server의 429 retry는 [AI 계약](../ai/AI.md)을 따릅니다.
 
 ### Chat API 오류 처리
 
 Frontend는 `detail` 문자열을 비교하지 않고 안정적인 `code`로 동작을 결정합니다.
 Request 전 client validation 오류는 pending Chat 항목을 만들지 않고 form 오류로 표시합니다.
-Request를 시작한 뒤 받은 `POST /api/chat` 오류는 다음 기준으로 pending 항목을 처리합니다.
+Request를 시작한 뒤 받은 `POST /api/chat-exchanges` 오류는 다음 기준으로 pending 항목을 처리합니다.
 
 | `code`·상황 | Browser 동작 |
 | --- | --- |
 | `validation_error` | pending Chat 항목의 AI 답변을 안전한 `detail`로 교체 |
 | `not_authenticated` | `/login`으로 이동 |
-| `internal_error`, `openai_api_error`, `openai_timeout` | pending Chat 항목의 AI 답변을 안전한 `detail`로 교체 |
+| `internal_error`, `openai_api_error`, `openai_timeout`, `openai_rate_limited`, `openai_quota_exceeded` | pending Chat 항목의 AI 답변을 안전한 `detail`로 교체 |
 | network 오류, JSON이 아닌 응답, 문자열이 아닌 `detail`, 알 수 없는 `code` | pending Chat 항목의 AI 답변을 `요청을 처리하지 못했습니다.`로 교체 |
 
 정확한 status·`code`·`detail`은 [API 계약의 오류 응답](../api/API.md#6-오류-응답)을
@@ -286,8 +296,8 @@ Request를 시작한 뒤 받은 `POST /api/chat` 오류는 다음 기준으로 p
 1. `app/ui/router.py`가 `/`, Auth form route, `/logout`, `/chat`을 소유합니다.
 2. `signup.html`, `login.html`, `chat.html`, `admin_logs.html`과 공통 template이 화면을 rendering하고,
    `styles.css`, `chat.js`, `page-lifecycle.js`가 공통 style과 Browser interaction을 담당합니다.
-3. `app/main.py`가 UI router를 한 번 등록하고 `app/ui/static`을 `/static`에 mount합니다. Admin·Chat
-   route는 각 소유 Router에서만 등록합니다.
+3. `app/main.py`는 `_register_routes(application)`으로 Admin·Chat·UI의 통합 Router를 한 번
+   연결하고 `app/ui/static`을 `/static`에 mount합니다. 각 route 정의는 소유 Router에 둡니다.
 4. `tests/ui/test_router.py`와 `tests/ui/test_templates.py`가 HTML route, 민감정보 미노출, template과
    static asset 연결을 검증합니다. 실제 Browser interaction은 아래 수동 checklist로 반복 확인합니다.
 

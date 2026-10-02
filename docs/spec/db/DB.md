@@ -163,3 +163,10 @@ error_code
 - 실패 record는 `answer IS NULL`, `status='failed'`이며 `error_code`로 실패 원인을 분류함
 - `request_method`, `request_path`는 DB 운영 metadata에 저장하지 않음
 - 사용자별 조회 결과가 서로 섞이지 않음
+
+## Retry 결과 저장
+
+429 재시도 중에는 `chat_exchanges`를 생성하지 않습니다. 최종 성공 또는 실패 record만 저장합니다.
+실패 code는 `openai_rate_limited`, `openai_quota_exceeded`, `openai_timeout`, `openai_api_error`,
+`internal_error`입니다. 기존 String column과 불변식을 사용해 schema 변경은 필요하지 않습니다.
+Runtime log는 별도 DB table 대신 `LOG_FILE`에 저장하고 관리자 화면은 기존 DB metadata만 조회합니다.

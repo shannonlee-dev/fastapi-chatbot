@@ -20,6 +20,8 @@ from app.chat.errors import (
     ChatGenerationError,
     ChatInvalidResponseError,
     ChatPersistenceError,
+    ChatQuotaError,
+    ChatRateLimitError,
     ChatTimeoutError,
 )
 from app.chat.models import ChatExchange
@@ -322,6 +324,8 @@ def test_service_preserves_message_normalized_by_http_boundary(
     [
         (ChatGenerationError(), "openai_api_error"),
         (ChatTimeoutError(), "openai_timeout"),
+        (ChatRateLimitError(), "openai_rate_limited"),
+        (ChatQuotaError(), "openai_quota_exceeded"),
         (ChatInvalidResponseError(), "openai_api_error"),
     ],
 )
@@ -512,7 +516,7 @@ def test_production_wrapper_logs_safely_before_client_configuration_failure(
     caplog: pytest.LogCaptureFixture,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    def fail_client_creation() -> object:
+    def fail_client_creation(**kwargs: object) -> object:
         raise ChatConfigurationError()
 
     monkeypatch.setattr(service_module, "create_openai_client", fail_client_creation)
@@ -550,13 +554,15 @@ def test_production_wrapper_does_not_revalidate_message_before_persistence(
     def fake_perf_counter() -> float:
         return current_time
 
-    def create_client() -> FakeAsyncOpenAIClient:
+    def create_client(**kwargs: object) -> FakeAsyncOpenAIClient:
         nonlocal current_time
         current_time = 10.2
         return client
 
     class FakeProductionGenerator:
-        def __init__(self, *, client: object, model: str) -> None:
+        def __init__(
+            self, *, client: object, model: str, timeout_seconds: float
+        ) -> None:
             received.update({"client": client, "model": model})
 
         async def generate(self, *, messages: Sequence[ChatMessage]) -> str:
@@ -567,7 +573,7 @@ def test_production_wrapper_does_not_revalidate_message_before_persistence(
 
     monkeypatch.setattr(service_module.time, "perf_counter", fake_perf_counter)
     monkeypatch.setattr(service_module, "create_openai_client", create_client)
-    monkeypatch.setattr(service_module, "get_openai_model", lambda: "configured-model")
+    monkeypatch.setattr(service_module.settings, "openai_model", "configured-model")
     monkeypatch.setattr(
         service_module, "OpenAIAnswerGenerator", FakeProductionGenerator
     )

@@ -58,6 +58,7 @@ cp .env.example .env
 | `DATABASE_URL` | `sqlite:///./data/chatbot.db` | Local SQLAlchemy DB 연결 URL. Production에서는 명시적 설정 필수 |
 | `APP_ENV` | `local` | `local` 또는 `production` |
 | `LOG_LEVEL` | `INFO` | Application log level |
+| `LOG_FILE` | `./data/logs/chatbot.log` | 5 MiB rotation과 backup 3개를 사용하는 JSON line log |
 | `ADMIN_USERNAME` | `admin` | 초기 관리자 username |
 | `ADMIN_INITIAL_PASSWORD` | 없음 | 관리자 역할 계정이 없는 DB의 최초 실행 시 필수 |
 | `PORT` | 없음 | Railway Variables에서 직접 설정하는 HTTP server port |
@@ -128,7 +129,7 @@ flowchart LR
 
 | 파일·디렉토리 | 역할 |
 | --- | --- |
-| `app/main.py` | FastAPI application 생성, Session·Request ID middleware와 exception handler 설정, Chat·Admin·UI router 등록, `/static` mount, DB table·초기 관리자 준비, `/health` 등록 |
+| `app/main.py` | FastAPI application 생성, middleware·공통 exception handler mapping·통합 Router 연결, `/static` mount, DB table·초기 관리자 준비, `/health` 등록 |
 | `app/core/config.py` | Environment variable loading, type 변환과 environment별 validation |
 | `app/core/database.py` | SQLAlchemy `Base`, engine, `SessionLocal`, 요청별 DB session과 table 초기화 |
 | `app/core/security.py` | PBKDF2-SHA256 password hash와 constant-time 검증 |
@@ -156,16 +157,16 @@ flowchart LR
 | 영역 | Router 책임 | 담당 endpoint | 상태 |
 | --- | --- | --- | --- |
 | `app/auth` | Auth는 HTTP router를 두지 않고 User·session·권한 domain interface를 제공합니다. Browser Auth form은 UI Router가 Auth Service를 호출하는 구조입니다. | 직접 소유 endpoint 없음 | Domain 구현 |
-| `app/chat/router.py` | 로그인 사용자 ID와 DB session을 Chat Service에 전달하고 결과·오류를 JSON으로 변환합니다. | `POST /api/chat`, `GET /api/chat-exchanges`, `GET /api/chat-exchanges/{chat_exchange_id}` | 구현 |
+| `app/chat/router.py` | 로그인 사용자 ID와 DB session을 Chat Service에 전달하고 결과·오류를 JSON으로 변환합니다. | `POST /api/chat-exchanges`, `GET /api/chat-exchanges`, `GET /api/chat-exchanges/{chat_exchange_id}` | 구현 |
 | `app/admin/router.py` | 관리자 권한을 확인하고 운영 metadata를 HTML로 rendering합니다. | `GET /admin/logs` | 구현 |
-| `app/ui/router.py` | Auth form 처리, session 생성·삭제, 본인 대화 기록과 Chat 화면 rendering을 담당합니다. | `GET /`, `GET·POST /signup`, `GET·POST /login`, `POST /logout`, `GET /chat` | 구현 |
+| `app/ui/router.py` | Auth form 처리, session 생성·삭제, 본인 대화 기록과 Chat 화면 rendering을 담당합니다. | `GET /`, `GET·POST /signup`, `GET·POST /login`, `POST /logout`, `GET·POST /chat` | 구현 |
 | `app/main.py` | Process health 확인 endpoint를 등록합니다. | `GET /health` | 구현 |
 
 Static asset은 `app/main.py`에서 `/static`에 mount하며 모든 화면이 공통 CSS를, Chat 화면이 Chat JavaScript를 사용합니다.
 
 ## 인증과 비로그인 접근 제한
 
-비로그인 접근 제한 대상은 `/chat`, `POST /api/chat`, 두 `/api/chat-exchanges...` 조회 API와 `/admin/logs`입니다. `/`는 인증 상태에 따라 `/chat` 또는 `/login`으로 이동하며, `/health`, `/signup`, `/login`, `/logout`, `/static/{path}`는 인증 없이 접근할 수 있습니다. `/logout`은 session 유무와 관계없이 session data를 제거하고 `/login`으로 이동하며, `/admin/logs`는 로그인 외에 `users.role=admin` 권한도 필요합니다.
+비로그인 접근 제한 대상은 `/chat`, `POST /api/chat-exchanges`, 두 `/api/chat-exchanges...` 조회 API와 `/admin/logs`입니다. `/`는 인증 상태에 따라 `/chat` 또는 `/login`으로 이동하며, `/health`, `/signup`, `/login`, `/logout`, `/static/{path}`는 인증 없이 접근할 수 있습니다. `/logout`은 session 유무와 관계없이 session data를 제거하고 `/login`으로 이동하며, `/admin/logs`는 로그인 외에 `users.role=admin` 권한도 필요합니다.
 
 대화에는 사용자 질문·답변이라는 개인별 정보가 저장되고, AI 호출은 외부 API 비용과 남용 위험을 발생시키므로 사용자 식별과 소유권 검사가 필요합니다. 따라서 비로그인 사용자의 질문·기록 접근을 차단해 다른 사용자의 기록 노출을 막고, 요청을 책임 있는 사용자와 연결하는 것을 보안·운영 정책의 근거로 삼습니다.
 
@@ -196,21 +197,22 @@ Static asset은 `app/main.py`에서 `/static`에 mount하며 모든 화면이 �
 | `POST` | `/login` | 불필요 | Form `username`, `password` | `303 /chat` |
 | `POST` | `/logout` | 상태 무관 | Form 제출 | `303 /login` |
 | `GET` | `/chat` | 필수 | 없음 | `200 text/html` |
-| `POST` | `/api/chat` | 필수 | JSON body `{"message": string}` | `200 ChatResponse` |
+| `POST` | `/chat` | 필수 | Form `message` | 저장 후 `303 /chat` |
+| `POST` | `/api/chat-exchanges` | 필수 | JSON body `{"message": string}` | `201 ChatExchangeResponse` |
 | `GET` | `/api/chat-exchanges` | 필수 | 없음 | `200 ChatExchangeResponse[]` |
 | `GET` | `/api/chat-exchanges/{chat_exchange_id}` | 필수 | Integer path parameter | `200 ChatExchangeResponse` |
 | `GET` | `/admin/logs` | 관리자 | 없음 | `200 text/html` |
 | `GET` | `/static/{path}` | 불필요 | Static asset path | `200 static asset` |
 | `GET` | `/health` | 불필요 | 없음 | `200 {"status":"ok"}` |
 
-보호된 API 예시는 Login form에서 생성한 유효한 signed session cookie가 있다는 전제입니다. Browser Chat 화면은 같은 session으로 `POST /api/chat`을 호출하고 성공한 교환을 화면 아래에 이어 붙입니다.
+보호된 API 예시는 Login form에서 생성한 유효한 signed session cookie가 있다는 전제입니다. Browser Chat 화면은 같은 session으로 `POST /api/chat-exchanges`를 호출하고 성공한 교환을 화면 아래에 이어 붙입니다.
 
 ### 질문 생성 요청
 
 `message`는 필수 문자열이며, 앞뒤 공백을 제거한 결과가 1~1000자여야 합니다.
 
 ```http
-POST /api/chat HTTP/1.1
+POST /api/chat-exchanges HTTP/1.1
 Content-Type: application/json
 Accept-Language: ko
 Cookie: session=<signed-session>
@@ -221,13 +223,16 @@ Cookie: session=<signed-session>
 성공 응답의 실제 JSON 형식은 다음과 같습니다.
 
 ```http
-HTTP/1.1 200 OK
+HTTP/1.1 201 Created
+Location: /api/chat-exchanges/15
 X-Request-ID: 6eea8bb1-9231-49cf-8f15-b7becd5f7614
 ```
 
 ```json
 {
   "chat_exchange_id": 15,
+  "question": "FastAPI의 장점을 설명해주세요.",
+  "status": "success",
   "answer": "FastAPI는 Python 기반의 웹 프레임워크입니다.",
   "created_at": "2026-08-04T06:00:00Z"
 }
@@ -453,3 +458,17 @@ GitHub Actions는 Python 3.11·3.12·3.13의 잠금 파일 설치, 문서·Ruff�
 `.python-version`의 3.13이며 Pyright는 지원 최소 버전 3.11의 문법을 기준으로 분석합니다.
 
 상세 요구사항과 설계 계약은 [`docs/spec/SPEC.md`](docs/spec/SPEC.md)에서 확인할 수 있습니다.
+
+### Chat 사용성과 운영
+
+질문 form은 SSR을 지원해 JavaScript 없이도 전송할 수 있습니다. JavaScript를 사용하면 pending
+답변 표시, 다음 질문 draft 유지, 대화 시작 예시를 제공합니다. 최근 성공 대화 5건으로 후속 질문의
+문맥을 유지하고, 정보가 부족할 때 핵심 확인 질문을 하도록 system prompt를 구성합니다.
+
+일시적인 429는 Server에서 최대 2회 지수적 backoff와 0~0.25초 jitter로 재시도합니다.
+`Retry-After`를 존중하고 전체 timeout 안에서 종료합니다. Quota 부족은 retry하지 않고 관리자
+문의 안내를 표시합니다. 요청·retry·AI 처리·DB 저장 결과는 request ID로 연결해 `LOG_FILE`에
+저장합니다. Production에서는 persistent volume의 `/data/logs/chatbot.log`를 설정합니다.
+
+Client는 `POST /api/chat-exchanges`와
+`201 Created`, `Location`, 단건 조회와 같은 resource response를 사용해야 합니다.

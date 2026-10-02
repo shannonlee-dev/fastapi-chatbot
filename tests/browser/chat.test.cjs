@@ -48,6 +48,35 @@ function success(answer = "답변") {
 
 const settle = () => new Promise((done) => setImmediate(done));
 
+test("대화 시작 예시는 draft만 채우고 자동 전송하지 않는다", (t) => {
+  let requests = 0;
+  const p = page(t, async () => { requests += 1; return success(); });
+  const button = p.document.querySelector("[data-chat-suggestion]");
+  assert.equal(button.hidden, false);
+  button.click();
+  assert.equal(p.input.value, button.dataset.chatSuggestion);
+  assert.equal(p.document.activeElement, p.input);
+  assert.equal(requests, 0);
+});
+
+test("질문은 REST collection에 전송하고 429 안내 후 다음 draft를 유지한다", async (t) => {
+  let finish;
+  let url;
+  const p = page(t, (target) => {
+    url = target;
+    return new Promise((resolve) => { finish = resolve; });
+  });
+  p.set("질문");
+  p.submit();
+  assert.equal(url, "/api/chat-exchanges");
+  p.set("다음 질문");
+  finish({ ok: false, json: async () => ({ code: "openai_rate_limited", detail: "잠시 후 다시 보내주세요." }) });
+  await settle();
+  assert.equal(p.document.querySelector("[data-chat-response]").textContent, "잠시 후 다시 보내주세요.");
+  assert.equal(p.input.value, "다음 질문");
+  assert.equal(p.document.getElementById("chat-submit").disabled, false);
+});
+
 test("이모지 1000개를 API와 같은 글자 수로 계산하고 전송한다", async (t) => {
   const sent = [];
   const p = page(t, async (_url, options) => {

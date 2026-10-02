@@ -4,56 +4,66 @@ from __future__ import annotations
 
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, HTTPException, Request, status
-from fastapi.exception_handlers import (
-    http_exception_handler as default_http_exception_handler,
-)
-from fastapi.exception_handlers import (
-    request_validation_exception_handler as default_validation_exception_handler,
-)
-from fastapi.exceptions import RequestValidationError
-from fastapi.responses import HTMLResponse, JSONResponse, Response
+from fastapi import APIRouter, Depends, Request, Response, status
 from sqlalchemy.orm import Session
 
 from app.auth.dependencies import get_current_user_id
-from app.chat.errors import (
-    AppError,
-    ChatGenerationError,
-    ChatPersistenceError,
-    ChatTimeoutError,
-)
-from app.chat.i18n import get_message
+from app.chat.errors import ChatError
+from app.chat.http import chat_error_to_app_error
 from app.chat.schemas import (
     ChatExchangeResponse,
     ChatRequest,
-    ChatResponse,
-    ErrorResponse,
 )
 from app.chat.service import get_chat_exchange, list_chat_exchange_history, process_chat
+from app.core.config import Settings, get_settings
 from app.core.database import get_db
-from app.core.request_id import REQUEST_ID_HEADER, get_request_id
+from app.core.errors import AppError
+from app.core.request_id import get_request_id
+from app.core.schemas import ErrorResponse
 
 router = APIRouter()
 
 
 @router.post(
-    "/api/chat",
-    response_model=ChatResponse,
+    "/api/chat-exchanges",
+    status_code=status.HTTP_201_CREATED,
+    response_model=ChatExchangeResponse,
     responses={
+        201: {
+            "description": "저장된 대화 resource를 생성했습니다.",
+            "headers": {
+                "Location": {
+                    "description": "생성된 대화 URL",
+                    "schema": {"type": "string"},
+                }
+            },
+        },
         400: {"model": ErrorResponse},
         401: {"model": ErrorResponse},
         422: {"model": ErrorResponse},
+        429: {
+            "model": ErrorResponse,
+            "headers": {
+                "Retry-After": {
+                    "description": "다시 전송하기 전 대기할 초",
+                    "schema": {"type": "integer"},
+                }
+            },
+        },
         500: {"model": ErrorResponse},
         502: {"model": ErrorResponse},
+        503: {"model": ErrorResponse},
         504: {"model": ErrorResponse},
     },
 )
 async def post_chat(
     payload: ChatRequest,
     request: Request,
+    response: Response,
     user_id: Annotated[int, Depends(get_current_user_id)],
     db: Annotated[Session, Depends(get_db)],
-) -> ChatResponse:
+    app_settings: Annotated[Settings, Depends(get_settings)],
+) -> ChatExchangeResponse:
     """질문을 처리하고 저장이 완료된 answer를 반환한다."""
 
     try:
@@ -63,15 +73,20 @@ async def post_chat(
             request_id=get_request_id(request),
             user_agent=_normalize_user_agent(request.headers.get("user-agent")),
             db=db,
+            app_settings=app_settings,
         )
-    except ChatTimeoutError as error:
-        raise AppError(status_code=504, code="openai_timeout") from error
-    except ChatGenerationError as error:
-        raise AppError(status_code=502, code="openai_api_error") from error
-    except ChatPersistenceError as error:
-        raise _persistence_app_error(error) from error
+    except ChatError as error:
+        raise chat_error_to_app_error(error) from error
 
-    return ChatResponse.model_validate(result)
+    response.headers["Location"] = f"/api/chat-exchanges/{result.chat_exchange_id}"
+    response.headers["Cache-Control"] = "no-store"
+    return ChatExchangeResponse(
+        chat_exchange_id=result.chat_exchange_id,
+        question=payload.message,
+        answer=result.answer,
+        status="success",
+        created_at=result.created_at,
+    )
 
 
 @router.get(
@@ -90,8 +105,8 @@ def get_chat_exchanges(
             ChatExchangeResponse.model_validate(item)
             for item in list_chat_exchange_history(user_id=user_id, db=db)
         ]
-    except ChatPersistenceError as error:
-        raise _persistence_app_error(error) from error
+    except ChatError as error:
+        raise chat_error_to_app_error(error) from error
 
 
 @router.get(
@@ -117,116 +132,14 @@ def get_chat_exchange_by_id(
             chat_exchange_id=chat_exchange_id,
             db=db,
         )
-    except ChatPersistenceError as error:
-        raise _persistence_app_error(error) from error
+    except ChatError as error:
+        raise chat_error_to_app_error(error) from error
     if exchange is None:
         raise AppError(status_code=404, code="conversation_not_found")
     return ChatExchangeResponse.model_validate(exchange)
-
-
-async def app_error_handler(request: Request, error: Exception) -> Response:
-    """AppError를 locale-aware JSON 오류로 변환한다."""
-
-    if not isinstance(error, AppError):
-        return await unhandled_exception_handler(request, error)
-    return _error_response(
-        request=request,
-        status_code=error.status_code,
-        code=error.code,
-        detail_key=error.detail_key,
-    )
-
-
-async def validation_exception_handler(request: Request, _error: Exception) -> Response:
-    """Pydantic body 검증 실패를 내부 구조 없이 통일한다."""
-
-    if not request.url.path.startswith("/api/"):
-        if isinstance(_error, RequestValidationError):
-            return await default_validation_exception_handler(request, _error)
-        return await unhandled_exception_handler(request, _error)
-    detail_key = _semantic_validation_detail_key(_error)
-    if detail_key is not None:
-        return _error_response(
-            request=request,
-            status_code=400,
-            code="validation_error",
-            detail_key=detail_key,
-        )
-    return _error_response(request=request, status_code=422, code="validation_error")
-
-
-async def http_exception_handler(request: Request, error: Exception) -> Response:
-    """Auth dependency의 HTTPException도 JSON API 오류 형식으로 통일한다."""
-
-    if not isinstance(error, HTTPException):
-        return await unhandled_exception_handler(request, error)
-    if not request.url.path.startswith("/api/"):
-        return await default_http_exception_handler(request, error)
-    if error.status_code == status.HTTP_401_UNAUTHORIZED:
-        return _error_response(
-            request=request, status_code=401, code="not_authenticated"
-        )
-    if error.status_code == status.HTTP_403_FORBIDDEN:
-        return _error_response(request=request, status_code=403, code="forbidden")
-    return _error_response(request=request, status_code=500, code="internal_error")
-
-
-async def unhandled_exception_handler(request: Request, _error: Exception) -> Response:
-    """예상하지 못한 예외를 안전한 내부 오류로 변환한다."""
-
-    if not request.url.path.startswith("/api/"):
-        response = HTMLResponse("서버 오류가 발생했습니다.", status_code=500)
-        response.headers[REQUEST_ID_HEADER] = get_request_id(request)
-        return response
-    response = _error_response(
-        request=request,
-        status_code=500,
-        code="internal_error",
-    )
-    response.headers[REQUEST_ID_HEADER] = get_request_id(request)
-    return response
-
-
-def _semantic_validation_detail_key(error: Exception) -> str | None:
-    """ChatRequest의 의미 검증 오류를 API detail key로 변환한다."""
-
-    if not isinstance(error, RequestValidationError):
-        return None
-    detail_keys = {
-        "empty_message": "empty_message",
-        "message_too_long": "message_too_long",
-    }
-    for validation_error in error.errors():
-        detail_key = detail_keys.get(validation_error["type"])
-        if detail_key is not None:
-            return detail_key
-    return None
-
-
-def _persistence_app_error(error: ChatPersistenceError) -> AppError:
-    """Persistence 실패를 안전한 내부 오류로 변환한다."""
-
-    return AppError(status_code=500, code="internal_error")
 
 
 def _normalize_user_agent(user_agent: str | None) -> str | None:
     """운영 metadata column 길이 안에서 User-Agent를 보관한다."""
 
     return user_agent[:512] if user_agent is not None else None
-
-
-def _error_response(
-    *,
-    request: Request,
-    status_code: int,
-    code: str,
-    detail_key: str | None = None,
-) -> JSONResponse:
-    detail = get_message(
-        key=detail_key or code,
-        accept_language=request.headers.get("accept-language"),
-    )
-    return JSONResponse(
-        status_code=status_code,
-        content=ErrorResponse(code=code, detail=detail).model_dump(),
-    )

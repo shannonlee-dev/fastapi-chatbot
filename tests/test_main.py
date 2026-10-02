@@ -91,16 +91,108 @@ def test_create_app_sets_configured_logging_level(main_module: ModuleType) -> No
     assert logging.getLogger().level == logging.WARNING
 
 
-def test_create_app_registers_ui_router_once(main_module: ModuleType) -> None:
+@pytest.mark.parametrize(
+    "method, path, status, code",
+    [
+        ("POST", "/api/chat", 404, "resource_not_found"),
+        ("DELETE", "/api/chat-exchanges", 405, "method_not_allowed"),
+    ],
+)
+def test_api_preserves_http_errors_and_safe_json_contract(
+    main_module: ModuleType,
+    method: str,
+    path: str,
+    status: int,
+    code: str,
+) -> None:
+    client = TestClient(main_module.create_app(_settings()))
+    response = client.request(method, path)
+    assert response.status_code == status
+    assert response.json()["code"] == code
+    assert response.headers["cache-control"] == "no-store"
+    if status == 405:
+        assert {method.strip() for method in response.headers["allow"].split(",")} == {
+            "GET",
+            "POST",
+        }
+
+
+def test_chat_receives_application_settings(
+    main_module: ModuleType,
+    db: Session,
+    user_id: int,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from datetime import UTC, datetime
+
+    import app.chat.router as chat_router
+    from app.chat.service import ChatResult
+
+    configured = _settings()
+    configured.openai_model = "application-model"
+    configured.openai_timeout_seconds = 12
+    app = main_module.create_app(configured)
+    app.dependency_overrides[get_db] = lambda: db
+    app.dependency_overrides[get_current_user_id] = lambda: user_id
+
+    async def generate(**kwargs: object) -> ChatResult:
+        assert kwargs["app_settings"] is configured
+        return ChatResult(
+            chat_exchange_id=7, answer="답변", created_at=datetime.now(UTC)
+        )
+
+    monkeypatch.setattr(chat_router, "process_chat", generate)
+    response = TestClient(app).post("/api/chat-exchanges", json={"message": "질문"})
+    assert response.status_code == 201
+
+
+def test_create_app_exposes_feature_routes_without_duplicate_operations(
+    main_module: ModuleType,
+) -> None:
     application = main_module.create_app(_settings())
 
-    matching_routes = [
-        route
-        for route in application.routes
-        if getattr(route, "original_router", None) is main_module.ui_router
+    paths = application.openapi()["paths"]
+    assert {"/login", "/chat", "/admin/logs", "/api/chat-exchanges"} <= paths.keys()
+    operation_ids = [
+        operation["operationId"]
+        for path in paths.values()
+        for operation in path.values()
+        if isinstance(operation, dict) and "operationId" in operation
     ]
+    assert len(operation_ids) == len(set(operation_ids))
 
-    assert len(matching_routes) == 1
+
+@pytest.mark.parametrize(
+    "message, expected_status, expected_code",
+    [(" ", 400, "validation_error"), ("질문", 503, "openai_quota_exceeded")],
+)
+def test_application_bundles_validation_and_domain_error_handlers(
+    main_module: ModuleType,
+    db: Session,
+    user_id: int,
+    monkeypatch: pytest.MonkeyPatch,
+    message: str,
+    expected_status: int,
+    expected_code: str,
+) -> None:
+    import app.chat.router as chat_router
+    from app.chat.errors import ChatQuotaError
+
+    application = main_module.create_app(_settings())
+    application.dependency_overrides[get_db] = lambda: db
+    application.dependency_overrides[get_current_user_id] = lambda: user_id
+
+    async def fail_generation(**_kwargs: object) -> None:
+        raise ChatQuotaError()
+
+    monkeypatch.setattr(chat_router, "process_chat", fail_generation)
+    response = TestClient(application).post(
+        "/api/chat-exchanges", json={"message": message}
+    )
+    assert response.status_code == expected_status
+    assert response.json()["code"] == expected_code
+    assert isinstance(response.json()["detail"], str)
+    assert response.headers["cache-control"] == "no-store"
 
 
 def test_create_app_mounts_static_files_once(main_module: ModuleType) -> None:

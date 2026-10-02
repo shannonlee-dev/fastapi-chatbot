@@ -1,8 +1,0 @@
-fastapi
-itsdangerous
-pydantic-settings
-uvicorn
-jinja2
-sqlalchemy
-openai
-python-multipart

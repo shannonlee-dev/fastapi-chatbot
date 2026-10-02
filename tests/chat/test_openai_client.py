@@ -22,7 +22,6 @@ from app.chat.errors import (
 from app.chat.openai_client import (
     OpenAIAnswerGenerator,
     create_openai_client,
-    get_openai_model,
 )
 from app.core.config import settings
 
@@ -119,14 +118,6 @@ def test_openai_configuration_rejects_an_unset_api_key(
         create_openai_client()
 
 
-def test_get_openai_model_returns_the_configured_value_without_revalidation(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    monkeypatch.setattr(settings, "openai_model", " test-model ")
-
-    assert get_openai_model() == " test-model "
-
-
 def test_openai_configuration_builds_client_with_retry_disabled(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -138,6 +129,5 @@ def test_openai_configuration_builds_client_with_retry_disabled(
     try:
         assert client.max_retries == 0
         assert client.timeout == 17.0
-        assert get_openai_model() == "test-model"
     finally:
         asyncio.run(client.close())

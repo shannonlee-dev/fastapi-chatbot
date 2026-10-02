@@ -20,12 +20,12 @@ from app.chat.models import ChatExchange
 from app.chat.openai_client import (
     OpenAIAnswerGenerator,
     create_openai_client,
-    get_openai_model,
 )
 from app.chat.repository import (
     ChatExchangeRepository,
     SqlAlchemyChatExchangeRepository,
 )
+from app.core.config import Settings, settings
 
 CONTEXT_HISTORY_LIMIT = 5
 
@@ -192,19 +192,22 @@ async def process_chat(
     request_id: str,
     user_agent: str | None = None,
     db: Session,
+    app_settings: Settings | None = None,
 ) -> ChatResult:
     """production 의존성을 조립해 Chat use case를 실행한다."""
 
     started_at = time.perf_counter()
     logger.info("request_received request_id=%s", request_id)
     repository = SqlAlchemyChatExchangeRepository(db=db)
-    async with create_openai_client() as client:
+    configured = app_settings or settings
+    async with create_openai_client(app_settings=configured) as client:
         service = ChatService(
             db=db,
             repository=repository,
             answer_generator=OpenAIAnswerGenerator(
                 client=client,
-                model=get_openai_model(),
+                model=configured.openai_model,
+                timeout_seconds=configured.openai_timeout_seconds,
             ),
         )
         return await service.execute(

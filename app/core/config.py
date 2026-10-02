@@ -2,8 +2,10 @@
 
 from __future__ import annotations
 
+from pathlib import Path
 from typing import Literal, Self
 
+from fastapi import Request
 from pydantic import Field, SecretStr, field_validator, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
@@ -37,6 +39,7 @@ class Settings(BaseSettings):
     )
     openai_timeout_seconds: float = Field(
         default=30,
+        allow_inf_nan=False,
         validation_alias="OPENAI_TIMEOUT_SECONDS",
     )
     app_env: Literal["local", "production"] = Field(
@@ -52,6 +55,9 @@ class Settings(BaseSettings):
         min_length=3,
         max_length=30,
         validation_alias="ADMIN_USERNAME",
+    )
+    log_file: Path = Field(
+        default=Path("data/logs/chatbot.log"), validation_alias="LOG_FILE"
     )
     admin_initial_password: SecretStr | None = Field(
         default=None,
@@ -141,3 +147,9 @@ class Settings(BaseSettings):
 
 
 settings = Settings()  # pyright: ignore[reportCallIssue]
+
+
+def get_settings(request: Request) -> Settings:
+    """현재 application에 주입된 실행 설정을 반환한다."""
+
+    return getattr(request.app.state, "settings", settings)

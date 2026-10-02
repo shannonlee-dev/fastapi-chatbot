@@ -157,7 +157,9 @@ def test_openai_timeout_converts_positive_environment_values(
     assert settings.openai_timeout_seconds == expected_timeout
 
 
-@pytest.mark.parametrize("configured_timeout", ["0", "-1", "not-a-number"])
+@pytest.mark.parametrize(
+    "configured_timeout", ["0", "-1", "not-a-number", "NaN", "inf", "-inf"]
+)
 def test_openai_timeout_rejects_nonpositive_or_invalid_values(
     monkeypatch: pytest.MonkeyPatch,
     configured_timeout: str,

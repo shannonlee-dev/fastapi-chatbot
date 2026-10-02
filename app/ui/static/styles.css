@@ -751,3 +751,15 @@ button:disabled {
     box-shadow: none;
   }
 }
+
+.chat-suggestions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 0.5rem;
+  margin-top: 1rem;
+}
+
+.chat-suggestions button {
+  font-size: 0.875rem;
+}

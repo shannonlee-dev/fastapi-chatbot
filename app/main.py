@@ -2,30 +2,24 @@
 
 from __future__ import annotations
 
-import logging
-from collections.abc import AsyncIterator, Callable
+from collections.abc import AsyncGenerator, Callable
 from contextlib import AbstractAsyncContextManager, asynccontextmanager
 from pathlib import Path
 
-from fastapi import FastAPI, HTTPException
-from fastapi.exceptions import RequestValidationError
+from fastapi import APIRouter, FastAPI
+from fastapi.routing import APIRoute
 from starlette.middleware.sessions import SessionMiddleware
 from starlette.staticfiles import StaticFiles
 
 from app.admin.router import router as admin_router
 from app.auth.models import User
 from app.auth.service import ensure_initial_admin
-from app.chat.errors import AppError
 from app.chat.models import ChatExchange
-from app.chat.router import (
-    app_error_handler,
-    http_exception_handler,
-    unhandled_exception_handler,
-    validation_exception_handler,
-)
 from app.chat.router import router as chat_router
 from app.core.config import Settings, settings
 from app.core.database import SessionLocal, init_db
+from app.core.http import get_exception_handlers
+from app.core.logging import configure_logging
 from app.core.request_id import RequestIdMiddleware
 from app.ui.router import router as ui_router
 
@@ -38,7 +32,7 @@ def _create_lifespan(
     app_settings: Settings,
 ) -> Callable[[FastAPI], AbstractAsyncContextManager[None]]:
     @asynccontextmanager
-    async def lifespan(_application: FastAPI) -> AsyncIterator[None]:
+    async def lifespan(_application: FastAPI) -> AsyncGenerator[None, None]:
         """요청을 받기 전에 DB table과 초기 admin 계정을 준비한다."""
 
         init_db()
@@ -49,13 +43,33 @@ def _create_lifespan(
     return lifespan
 
 
+def _register_routes(application: FastAPI) -> None:
+    """통합 Router와 resource별 허용 method를 application에 연결한다."""
+
+    router = APIRouter()
+    allowed_methods: dict[str, set[str]] = {}
+    for feature_router in (admin_router, chat_router, ui_router):
+        router.include_router(feature_router)
+        for route in feature_router.routes:
+            if isinstance(route, APIRoute):
+                allowed_methods.setdefault(route.path, set()).update(
+                    route.methods or ()
+                )
+    application.include_router(router)
+    application.state.allowed_methods = allowed_methods
+
+
 def create_app(app_settings: Settings | None = None) -> FastAPI:
     """검증된 설정으로 FastAPI application을 생성한다."""
 
     configured = app_settings or settings
-    _configure_logging(configured.log_level)
+    configure_logging(log_level=configured.log_level, log_file=configured.log_file)
 
-    application = FastAPI(lifespan=_create_lifespan(configured))
+    application = FastAPI(
+        lifespan=_create_lifespan(configured),
+        exception_handlers=get_exception_handlers(),
+    )
+    application.state.settings = configured
     application.add_middleware(
         SessionMiddleware,
         secret_key=configured.session_secret.get_secret_value(),
@@ -65,33 +79,18 @@ def create_app(app_settings: Settings | None = None) -> FastAPI:
     )
     application.add_middleware(RequestIdMiddleware)
 
-    application.include_router(admin_router)
-    application.include_router(chat_router)
-    application.include_router(ui_router)
+    _register_routes(application)
     application.mount(
         "/static",
         StaticFiles(directory=_STATIC_DIRECTORY),
         name="static",
     )
-    application.add_exception_handler(
-        RequestValidationError,
-        validation_exception_handler,
-    )
-    application.add_exception_handler(AppError, app_error_handler)
-    application.add_exception_handler(HTTPException, http_exception_handler)
-    application.add_exception_handler(Exception, unhandled_exception_handler)
 
     @application.get("/health")
     def health() -> dict[str, str]:
         return {"status": "ok"}
 
     return application
-
-
-def _configure_logging(log_level: str) -> None:
-    level = getattr(logging, log_level)
-    logging.basicConfig(level=level)
-    logging.getLogger().setLevel(level)
 
 
 app = create_app()

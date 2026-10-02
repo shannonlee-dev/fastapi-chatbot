@@ -2,11 +2,17 @@
 
 from __future__ import annotations
 
+import logging
+import time
 from uuid import uuid4
 
 from starlette.datastructures import MutableHeaders
 from starlette.requests import Request
 from starlette.types import ASGIApp, Message, Receive, Scope, Send
+
+from app.core.logging import current_request_id
+
+logger = logging.getLogger(__name__)
 
 REQUEST_ID_HEADER = "X-Request-ID"
 REQUEST_ID_STATE_KEY = "request_id"
@@ -30,14 +36,31 @@ class RequestIdMiddleware:
 
         request_id = str(uuid4())
         scope.setdefault("state", {})[REQUEST_ID_STATE_KEY] = request_id
+        token = current_request_id.set(request_id)
+        started_at = time.perf_counter()
+        status_code = 500
+        logger.info("http_request_received")
 
         async def send_with_request_id(message: Message) -> None:
+            nonlocal status_code
             if message["type"] == "http.response.start":
+                status_code = message["status"]
                 headers = MutableHeaders(scope=message)
                 headers[REQUEST_ID_HEADER] = request_id
+                if scope["path"].startswith("/api/"):
+                    headers["Cache-Control"] = "no-store"
             await send(message)
 
-        await self.app(scope, receive, send_with_request_id)
+        try:
+            await self.app(scope, receive, send_with_request_id)
+        finally:
+            logger.info(
+                "http_request_completed method=%s status=%s response_time_ms=%s",
+                scope["method"],
+                status_code,
+                max(0, int((time.perf_counter() - started_at) * 1000)),
+            )
+            current_request_id.reset(token)
 
 
 def get_request_id(request: Request) -> str:

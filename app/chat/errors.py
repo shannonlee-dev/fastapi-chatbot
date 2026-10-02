@@ -1,18 +1,6 @@
 """Chat domain이 HTTP layer에 전달하는 안전한 오류다."""
 
 
-class AppError(Exception):
-    """JSON API가 안전하게 응답할 수 있는 application 오류다."""
-
-    def __init__(
-        self, *, status_code: int, code: str, detail_key: str | None = None
-    ) -> None:
-        self.status_code = status_code
-        self.code = code
-        self.detail_key = detail_key or code
-        super().__init__(code)
-
-
 class ChatError(Exception):
     """사용자 응답으로 변환 가능한 Chat domain 오류의 base class다."""
 
@@ -27,6 +15,22 @@ class ChatTimeoutError(ChatGenerationError):
     """OpenAI 호출 시간이 초과됐다."""
 
     record_message = "openai_timeout"
+
+
+class ChatRateLimitError(ChatGenerationError):
+    """429 retry를 완료했거나 대기 시간이 허용 범위를 초과했다."""
+
+    record_message = "openai_rate_limited"
+
+    def __init__(self, *, retry_after: int = 1) -> None:
+        self.retry_after = retry_after
+        super().__init__(self.record_message)
+
+
+class ChatQuotaError(ChatGenerationError):
+    """Provider quota가 부족해 재시도로 해결할 수 없다."""
+
+    record_message = "openai_quota_exceeded"
 
 
 class ChatInvalidResponseError(ChatGenerationError):

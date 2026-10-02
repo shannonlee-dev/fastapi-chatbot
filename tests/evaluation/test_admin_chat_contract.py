@@ -267,7 +267,6 @@ def test_admin_chat_contract_projection_history_and_visibility(
     paths = {path for route in app.routes if (path := getattr(route, "path", None))}
     api_paths = {path for path in paths if path.startswith("/api/")}
     assert api_paths <= {
-        "/api/chat",
         "/api/chat-exchanges",
         "/api/chat-exchanges/{chat_exchange_id}",
     }
@@ -308,17 +307,26 @@ def test_admin_chat_contract_request_id_matches_persisted_exchange(
                 ]
             )
 
-    monkeypatch.setattr(chat_service, "create_openai_client", FakeOpenAIClient)
-    monkeypatch.setattr(chat_service, "get_openai_model", lambda: "evaluation-model")
+    monkeypatch.setattr(
+        chat_service, "create_openai_client", lambda **kwargs: FakeOpenAIClient()
+    )
+
     _login(client, "evaluation-user")
     with caplog.at_level("INFO", logger="app.chat.service"):
         response = client.post(
-            "/api/chat",
+            "/api/chat-exchanges",
             json={"message": "request scoped question"},
             headers={"user-agent": "evaluation-agent/1.0"},
         )
-    assert response.status_code == 200
-    assert set(response.json()) == {"chat_exchange_id", "answer", "created_at"}
+    assert response.status_code == 201
+    assert set(response.json()) == {
+        "chat_exchange_id",
+        "question",
+        "answer",
+        "status",
+        "created_at",
+    }
+    assert client.get(response.headers["location"]).json() == response.json()
     request_id = response.headers["x-request-id"]
     saved = db.query(ChatExchange).filter_by(request_id=request_id).one()
     assert saved.answer == "generated answer"

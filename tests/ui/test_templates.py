@@ -210,7 +210,7 @@ def test_chat_template_keeps_empty_history_and_complete_form_contract() -> None:
     collector = _collect_tags(html)
     main = _find_tag(collector, "main", "id", "main-content")
     history = _find_tag(collector, "section", "id", "chat-history")
-    empty_state = _find_tag(collector, "p", "id", "chat-empty-state")
+    empty_state = _find_tag(collector, "div", "id", "chat-empty-state")
     form = _find_tag(collector, "form", "id", "chat-form")
     label = _find_tag(collector, "label", "for", "chat-message")
     textarea = _find_tag(collector, "textarea", "id", "chat-message")
@@ -295,7 +295,7 @@ def test_chat_interaction_script_preserves_static_safety_and_api_contract() -> N
         assert data_hook in script
 
     for request_contract in (
-        'fetch("/api/chat"',
+        'fetch("/api/chat-exchanges"',
         'method: "POST"',
         'Accept: "application/json"',
         '"Content-Type": "application/json"',

@@ -10,7 +10,7 @@
     <div class="chat-header__inner">
       <div>
         <h1 class="chat-header__title">Chat</h1>
-        <p class="chat-header__description">이전 대화를 확인하고 새로운 질문을 보내세요.</p>
+        <p class="chat-header__description">함께 생각하고, 궁금한 것을 풀어보세요.</p>
       </div>
 
       {# Admin access is conditional while Logout remains POST-only. #}
@@ -61,14 +61,22 @@
         {% endfor %}
       {% else %}
       {# Initial state before the user has sent any questions. #}
-      <p id="chat-empty-state" class="chat-empty-state">아직 대화 기록이 없습니다.</p>
+      <div id="chat-empty-state" class="chat-empty-state">
+        <p>아직 대화 기록이 없습니다.</p>
+        <p>무엇을 도와드릴까요? 궁금한 점이나 함께 정리할 생각을 보내주세요.</p>
+        <div class="chat-suggestions" aria-label="대화 시작 예시">
+          <button type="button" data-chat-suggestion="복잡한 개념을 쉬운 예시로 설명해줘." hidden>쉽게 설명하기</button>
+          <button type="button" data-chat-suggestion="오늘 할 일을 함께 정리해줘." hidden>할 일 정리하기</button>
+          <button type="button" data-chat-suggestion="새로운 아이디어를 함께 생각해줘." hidden>아이디어 나누기</button>
+        </div>
+      </div>
       {% endif %}
     </section>
 
     {# New-question composer controlled by the Chat JavaScript module. #}
     <section class="chat-composer" aria-labelledby="chat-composer-heading">
       <h2 id="chat-composer-heading">질문 보내기</h2>
-      <form id="chat-form" class="chat-form" novalidate>
+      <form id="chat-form" class="chat-form" method="post" action="/chat" novalidate>
         <div class="form-field">
           <label for="chat-message">질문</label>
           <textarea
@@ -77,14 +85,15 @@
             rows="2"
             maxlength="2000"
             required
+            placeholder="메시지를 입력하세요"
             aria-describedby="chat-character-count chat-form-error"
-          ></textarea>
+          >{{ draft | default("") }}</textarea>
 
           <div class="chat-form__meta">
             <span
               id="chat-character-count"
               class="chat-form__counter"
-            >0 / 1000</span>
+            >{{ draft | default("") | length }} / 1000</span>
           </div>
         </div>
 
@@ -93,8 +102,8 @@
           id="chat-form-error"
           class="form-error"
           role="alert"
-          hidden
-        ></p>
+          {% if not error | default(none) %}hidden{% endif %}
+        >{{ error | default("") }}</p>
 
         <div class="chat-form__actions">
           <button id="chat-submit" type="submit">전송</button>

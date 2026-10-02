@@ -30,6 +30,7 @@
 | `GET` | `/login` | 비로그인 `200 login.html` · 유효한 로그인 `303 /chat` | 해당 없음 | 로그인화면 |
 | `POST` | `/login` | 세션 생성 후 `303 /chat` | 동일 화면 `400` | 로그인 처리 |
 | `POST` | `/logout` | 세션 삭제 후 `303 /login` | 비로그인도 `303 /login` | 로그아웃 처리 |
+| `POST` | `/chat` | 저장 후 `303 /chat` | 검증 실패 `400`, AI 오류는 동일 HTML 화면 | JavaScript 없는 SSR 질문 전송 |
 | `GET` | `/chat` | 본인 이전 대화와 입력창을 포함한 `200 chat.html` | 비로그인·stale session `303 /login` | 채팅·사용자 대화 로그 화면 |
 | `GET` | `/admin/logs` | 관리자 `200 admin_logs.html` | 비로그인 `303 /login`, 비관리자 `403` | `app/admin/router.py`가 소유하는 관리자 전용 채팅 운영 metadata 조회 화면 |
 | `GET` | `/static/{path}` | 존재하는 CSS·JavaScript asset `200` | 없는 asset `404` | 인증이 필요 없는 UI static asset |
@@ -86,6 +87,11 @@
 - Session 값이 없거나 유효하지 않거나 대응 User가 없는 stale session이면 history를 조회하거나
   template을 rendering하지 않고 session을 제거한 뒤 `303 /login`을 반환합니다.
 
+`POST /chat`은 `message` form field를 같은 `ChatRequest`로 검증합니다. 성공 시 PRG로
+`303 /chat`을 반환하고, 검증 실패 시 draft와 안전한 오류를 `400 chat.html`에 표시합니다.
+AI 오류 시 저장된 history와 오류를 같은 HTML 화면에서 해당 status로 반환합니다.
+오류 rendering의 추가 context는 `error: str`, `draft: str`입니다.
+
 ### 관리자 채팅 운영 metadata 화면 계약
 
 `GET /admin/logs`는 관리자만 접근하는 읽기 전용 화면이며 server runtime log file을 보여주지
@@ -104,7 +110,7 @@
 
 | Method | 경로 | 인증 | 역할 |
 | --- | --- | --- | --- |
-| `POST` | `/api/chat` | 필수 | Pydantic 질문 검증과 AI 답변 생성 |
+| `POST` | `/api/chat-exchanges` | 필수 | 질문·답변 resource 생성, 저장 후 `201 Created` |
 | `GET` | `/api/chat-exchanges` | 필수 | 로그인 사용자의 전체 질문·답변을 JSON으로 반환 |
 | `GET` | `/api/chat-exchanges/{chat_exchange_id}` | 필수 | 로그인 사용자의 특정 질문·답변 한 건을 JSON으로 반환 |
 | `GET` | `/health` | 불필요 | process 상태만 확인 |
@@ -120,7 +126,7 @@ OpenAI message 구성과 호출 정책은 [AI 호출 계약](../ai/AI.md)을 따
 ### 요청
 
 ```http
-POST /api/chat
+POST /api/chat-exchanges
 Content-Type: application/json
 ```
 
@@ -138,13 +144,17 @@ Content-Type: application/json
 ```json
 {
   "chat_exchange_id": 15,
+  "question": "FastAPI의 장점을 설명해주세요.",
+  "status": "success",
   "answer": "FastAPI는 Python 기반의 웹 프레임워크입니다.",
   "created_at": "2026-08-04T06:00:00Z"
 }
 ```
 
 - `chat_exchange_id`는 `chat_exchanges.id`를 의미합니다.
-- 답변 저장이 성공한 뒤에만 `200 OK`를 반환합니다.
+- 답변 저장이 성공한 뒤에만 `201 Created`를 반환하고 `Location: /api/chat-exchanges/15`로
+  생성된 resource URL을 전달합니다. 응답은 단건 조회와 같은 `ChatExchangeResponse`입니다.
+- JSON API 응답은 `Cache-Control: no-store`를 사용합니다.
 
 ## 5. 대화 기록 조회 API
 
@@ -181,9 +191,15 @@ lower_snake_case 식별자이고, `detail`은 locale에 따라 변환되는 사�
 | `403` | 권한 부족 JSON 요청 | `forbidden` | `접근 권한이 없습니다.` |
 | `404` | 대화 기록 없음 또는 다른 사용자 소유 | `conversation_not_found` | `대화 기록을 찾을 수 없습니다.` |
 | `422` | 필드 누락·자료형·JSON 형식 오류 | `validation_error` | `요청 형식이 올바르지 않습니다.` |
+| `429` | 일시적인 429 retry 소진·대기 상한 초과 | `openai_rate_limited` | `지금은 요청이 많아 답변을 생성하지 못했습니다. 잠시 후 다시 보내주세요.` |
+| `503` | OpenAI quota 부족 | `openai_quota_exceeded` | `AI 서비스의 사용 한도가 초과되었습니다. 관리자에게 문의해주세요.` |
 | `500` | DB 저장·조회 실패를 포함한 내부 오류 | `internal_error` | `서버 오류가 발생했습니다. 잠시 후 다시 시도해주세요.` |
 | `502` | OpenAI API 오류 | `openai_api_error` | `AI 응답 생성에 실패했습니다. 잠시 후 다시 시도해주세요.` |
 | `504` | OpenAI 요청 timeout | `openai_timeout` | `AI 응답 시간이 초과되었습니다. 잠시 후 다시 시도해주세요.` |
+
+429 response는 대기 시간(초)을 `Retry-After`로 전달합니다. Quota 오류에는 이 header를
+사용하지 않습니다. 존재하지 않는 API 경로는 `404 resource_not_found`, 지원하지 않는 method는
+`405 method_not_allowed`이며 `Allow` header에 같은 resource가 지원하는 모든 method를 표시합니다.
 
 ### i18n 오류 message
 
@@ -242,6 +258,11 @@ Browser frontend와 backend가 하나의 application으로 함께 배포되므�
 
 Breaking change를 기존 endpoint에 조용히 적용하지 않습니다.
 
+2026-10-02 변경: 질문 생성은 기존 `POST /api/chat`에서 `POST /api/chat-exchanges`로
+이동했고 성공 status는 `200`에서 `201`로 변경했습니다. 질문·상태 field를 추가하고
+`Location`을 제공합니다. 함께 배포하는 Browser client와 test를 이 계약으로 변경하며
+기존 endpoint는 제거합니다. 외부 client는 새 경로와 status로 migration해야 합니다.
+
 ### Version 관리
 
 현재 application은 외부 독립 client를 제공하지 않으므로 `/api/v1` 같은 URL version을 선제적으로
@@ -251,8 +272,8 @@ Breaking change를 기존 endpoint에 조용히 적용하지 않습니다.
 유지해야 하는 client가 생긴 상태에서 breaking change가 필요하면 versioned API를 도입합니다.
 
 ```text
-/api/v1/chat
-/api/v2/chat
+/api/v1/chat-exchanges
+/api/v2/chat-exchanges
 ```
 
 새 version을 도입하는 동안 기존 version은 명시된 deprecation 기간 동안 유지하고, 제거 시점과

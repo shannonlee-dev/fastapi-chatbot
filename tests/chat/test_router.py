@@ -13,20 +13,23 @@ from fastapi.exceptions import RequestValidationError
 from fastapi.testclient import TestClient
 from sqlalchemy.orm import Session
 
-import app.chat.i18n as i18n_module
 import app.chat.router as router_module
+import app.core.http as http_module
+import app.core.i18n as i18n_module
 from app.auth.dependencies import get_current_user_id
 from app.auth.models import User
 from app.auth.repository import create_user
 from app.chat.errors import (
-    AppError,
     ChatGenerationError,
     ChatPersistenceError,
+    ChatQuotaError,
+    ChatRateLimitError,
     ChatTimeoutError,
 )
 from app.chat.models import ChatExchange
 from app.chat.service import ChatResult
 from app.core.database import get_db
+from app.core.errors import AppError
 from app.core.request_id import REQUEST_ID_HEADER, RequestIdMiddleware
 
 
@@ -42,14 +45,12 @@ def app(db: Session) -> Generator[FastAPI, None, None]:
     application.add_middleware(RequestIdMiddleware)
     application.include_router(router_module.router)
     application.add_exception_handler(
-        RequestValidationError, router_module.validation_exception_handler
+        RequestValidationError, http_module.validation_exception_handler
     )
-    application.add_exception_handler(AppError, router_module.app_error_handler)
+    application.add_exception_handler(AppError, http_module.app_error_handler)
+    application.add_exception_handler(HTTPException, http_module.http_exception_handler)
     application.add_exception_handler(
-        HTTPException, router_module.http_exception_handler
-    )
-    application.add_exception_handler(
-        Exception, router_module.unhandled_exception_handler
+        Exception, http_module.unhandled_exception_handler
     )
     application.dependency_overrides[get_db] = lambda: db
     yield application
@@ -117,15 +118,18 @@ def test_post_chat_returns_contract_and_passes_user_agent(
     monkeypatch.setattr(router_module, "process_chat", fake_process_chat)
 
     response = authenticated_client.post(
-        "/api/chat",
+        "/api/chat-exchanges",
         json={"message": "question"},
         headers={"user-agent": "router-test/1.0"},
     )
 
-    assert response.status_code == 200
+    assert response.status_code == 201
+    assert response.headers["location"] == "/api/chat-exchanges/15"
     assert response.json() == {
         "chat_exchange_id": 15,
         "answer": "answer",
+        "question": "question",
+        "status": "success",
         "created_at": "2026-08-07T00:00:00Z",
     }
     assert received == {
@@ -134,6 +138,7 @@ def test_post_chat_returns_contract_and_passes_user_agent(
         "request_id": response.headers["x-request-id"],
         "user_agent": "router-test/1.0",
         "db": ANY,
+        "app_settings": ANY,
     }
 
 
@@ -151,9 +156,11 @@ def test_post_chat_accepts_both_message_length_boundaries(
 
     monkeypatch.setattr(router_module, "process_chat", fake_process_chat)
 
-    response = authenticated_client.post("/api/chat", json={"message": message})
+    response = authenticated_client.post(
+        "/api/chat-exchanges", json={"message": message}
+    )
 
-    assert response.status_code == 200
+    assert response.status_code == 201
     assert received["message"] == message
 
 
@@ -179,17 +186,17 @@ def test_post_chat_limits_persisted_user_agent_to_database_boundary(
     monkeypatch.setattr(router_module, "process_chat", fake_process_chat)
 
     response = authenticated_client.post(
-        "/api/chat",
+        "/api/chat-exchanges",
         json={"message": "question"},
         headers={"user-agent": header_value},
     )
 
-    assert response.status_code == 200
+    assert response.status_code == 201
     assert received["user_agent"] == expected_user_agent
 
 
 def test_post_chat_requires_login(client: TestClient) -> None:
-    response = client.post("/api/chat", json={"message": "question"})
+    response = client.post("/api/chat-exchanges", json={"message": "question"})
 
     assert response.status_code == 401
     assert response.json() == {
@@ -199,7 +206,7 @@ def test_post_chat_requires_login(client: TestClient) -> None:
 
 
 @pytest.mark.parametrize(
-    ("count", "expected_status"), [(501, 200), (1000, 200), (1001, 400)]
+    ("count", "expected_status"), [(501, 201), (1000, 201), (1001, 400)]
 )
 def test_chat_emoji_length_matches_ui_code_point_boundary(
     authenticated_client: TestClient,
@@ -215,9 +222,11 @@ def test_chat_emoji_length_matches_ui_code_point_boundary(
 
     monkeypatch.setattr(router_module, "process_chat", fake_process_chat)
     question = "😀" * count
-    response = authenticated_client.post("/api/chat", json={"message": question})
+    response = authenticated_client.post(
+        "/api/chat-exchanges", json={"message": question}
+    )
     assert response.status_code == expected_status
-    assert questions == ([question] if expected_status == 200 else [])
+    assert questions == ([question] if expected_status == 201 else [])
 
 
 @pytest.mark.parametrize(
@@ -242,7 +251,7 @@ def test_post_chat_rejects_semantic_input_before_chat_processing(
 
     monkeypatch.setattr(router_module, "process_chat", fake_process_chat)
 
-    response = authenticated_client.post("/api/chat", json=payload)
+    response = authenticated_client.post("/api/chat-exchanges", json=payload)
 
     assert response.status_code == 400
     assert response.json() == {"code": "validation_error", "detail": detail}
@@ -272,12 +281,10 @@ def test_post_chat_rejects_deleted_user_before_processing(
 
     application.add_middleware(RequestIdMiddleware)
     application.include_router(router_module.router)
+    application.add_exception_handler(HTTPException, http_module.http_exception_handler)
+    application.add_exception_handler(AppError, http_module.app_error_handler)
     application.add_exception_handler(
-        HTTPException, router_module.http_exception_handler
-    )
-    application.add_exception_handler(AppError, router_module.app_error_handler)
-    application.add_exception_handler(
-        Exception, router_module.unhandled_exception_handler
+        Exception, http_module.unhandled_exception_handler
     )
     application.dependency_overrides[get_db] = lambda: db
     process_calls = 0
@@ -290,7 +297,7 @@ def test_post_chat_rejects_deleted_user_before_processing(
     monkeypatch.setattr(router_module, "process_chat", fake_process_chat)
 
     with TestClient(application, raise_server_exceptions=False) as test_client:
-        response = test_client.post("/api/chat", json={"message": "question"})
+        response = test_client.post("/api/chat-exchanges", json={"message": "question"})
 
     assert response.status_code == 401
     assert response.json() == {
@@ -315,7 +322,7 @@ def test_post_chat_distinguishes_domain_and_request_validation(
     status_code: int,
     detail: str,
 ) -> None:
-    response = authenticated_client.post("/api/chat", json=payload)
+    response = authenticated_client.post("/api/chat-exchanges", json=payload)
 
     assert response.status_code == status_code
     assert response.json() == {"code": "validation_error", "detail": detail}
@@ -325,7 +332,7 @@ def test_post_chat_returns_validation_error_for_malformed_json(
     authenticated_client: TestClient,
 ) -> None:
     response = authenticated_client.post(
-        "/api/chat",
+        "/api/chat-exchanges",
         content="{",
         headers={"content-type": "application/json"},
     )
@@ -379,7 +386,9 @@ def test_post_chat_returns_safe_error_for_processing_failures(
 
     monkeypatch.setattr(router_module, "process_chat", failing_process_chat)
 
-    response = authenticated_client.post("/api/chat", json={"message": "question"})
+    response = authenticated_client.post(
+        "/api/chat-exchanges", json={"message": "question"}
+    )
 
     assert response.status_code == status_code
     assert response.json() == {"code": code, "detail": detail}
@@ -396,7 +405,9 @@ def test_post_chat_returns_internal_error_for_context_read_failure(
 
     monkeypatch.setattr(router_module, "process_chat", failing_process_chat)
 
-    response = authenticated_client.post("/api/chat", json={"message": "question"})
+    response = authenticated_client.post(
+        "/api/chat-exchanges", json={"message": "question"}
+    )
 
     assert response.status_code == 500
     assert response.json() == {
@@ -415,13 +426,50 @@ def test_unhandled_error_log_hides_internal_error_detail(
 
     monkeypatch.setattr(router_module, "process_chat", failing_process_chat)
 
-    with caplog.at_level("ERROR", logger="app.chat.router"):
-        response = authenticated_client.post("/api/chat", json={"message": "question"})
+    with caplog.at_level("ERROR", logger="app.core.http"):
+        response = authenticated_client.post(
+            "/api/chat-exchanges", json={"message": "question"}
+        )
 
     assert response.status_code == 500
-    assert not caplog.records
+    assert any(
+        record.getMessage() == "unhandled_error type=RuntimeError"
+        for record in caplog.records
+    )
     assert "select" not in caplog.text
     assert "secret_cookie" not in caplog.text
+
+
+@pytest.mark.parametrize(
+    "error, expected_status, code",
+    [
+        (ChatRateLimitError(retry_after=17), 429, "openai_rate_limited"),
+        (ChatQuotaError(), 503, "openai_quota_exceeded"),
+    ],
+)
+def test_rate_limit_and_quota_have_distinct_safe_http_results(
+    authenticated_client: TestClient,
+    monkeypatch: pytest.MonkeyPatch,
+    error: Exception,
+    expected_status: int,
+    code: str,
+) -> None:
+    async def fail(**kwargs: object) -> ChatResult:
+        raise error
+
+    monkeypatch.setattr(router_module, "process_chat", fail)
+    response = authenticated_client.post(
+        "/api/chat-exchanges",
+        json={"message": "질문"},
+        headers={"Accept-Language": "en"},
+    )
+    assert response.status_code == expected_status
+    assert response.json()["code"] == code
+    assert response.headers["cache-control"] == "no-store"
+    if expected_status == 429:
+        assert response.headers["retry-after"] == "17"
+    else:
+        assert "retry-after" not in response.headers
 
 
 def test_history_is_isolated_and_hides_operational_metadata(
@@ -577,7 +625,7 @@ def test_error_detail_uses_supported_locale_or_korean_fallback(
     detail: str,
 ) -> None:
     response = client.post(
-        "/api/chat",
+        "/api/chat-exchanges",
         json={"message": "question"},
         headers={"accept-language": accept_language},
     )
