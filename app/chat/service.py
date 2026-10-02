@@ -5,11 +5,7 @@ from __future__ import annotations
 import logging
 import time
 from collections.abc import Sequence
-from dataclasses import dataclass
-from datetime import datetime
 from typing import Protocol
-
-from sqlalchemy.orm import Session
 
 from app.chat.context import ChatMessage, build_context_messages
 from app.chat.errors import (
@@ -17,15 +13,9 @@ from app.chat.errors import (
     ChatPersistenceError,
 )
 from app.chat.models import ChatExchange
-from app.chat.openai_client import (
-    OpenAIAnswerGenerator,
-    create_openai_client,
-)
-from app.chat.repository import (
-    ChatExchangeRepository,
-    SqlAlchemyChatExchangeRepository,
-)
-from app.core.config import Settings, settings
+from app.chat.repository import ChatExchangeRepository
+from app.chat.schemas import ChatExchangeHistoryItem, ChatResult
+from app.core.transactions import Transaction
 
 CONTEXT_HISTORY_LIMIT = 5
 
@@ -41,33 +31,13 @@ class AnswerGenerator(Protocol):
         ...
 
 
-@dataclass(frozen=True)
-class ChatResult:
-    """성공적으로 저장된 Chat 처리 결과다."""
-
-    chat_exchange_id: int
-    answer: str
-    created_at: datetime
-
-
-@dataclass(frozen=True)
-class ChatExchangeHistoryItem:
-    """사용자 화면에 안전하게 전달할 ChatExchange history 항목이다."""
-
-    chat_exchange_id: int
-    question: str
-    answer: str | None
-    status: str
-    created_at: datetime
-
-
 class ChatService:
     """질문 처리, answer 생성, ChatExchange 저장을 하나의 use case로 묶는다."""
 
     def __init__(
         self,
         *,
-        db: Session,
+        db: Transaction,
         repository: ChatExchangeRepository,
         answer_generator: AnswerGenerator,
     ) -> None:
@@ -185,72 +155,42 @@ class ChatService:
             raise ChatPersistenceError() from error
 
 
-async def process_chat(
-    *,
-    user_id: int,
-    message: str,
-    request_id: str,
-    user_agent: str | None = None,
-    db: Session,
-    app_settings: Settings | None = None,
-) -> ChatResult:
-    """production 의존성을 조립해 Chat use case를 실행한다."""
+class ChatHistoryService:
+    """사용자 소유 대화 조회와 안전한 history 변환을 처리한다."""
 
-    started_at = time.perf_counter()
-    logger.info("request_received request_id=%s", request_id)
-    repository = SqlAlchemyChatExchangeRepository(db=db)
-    configured = app_settings or settings
-    async with create_openai_client(app_settings=configured) as client:
-        service = ChatService(
-            db=db,
-            repository=repository,
-            answer_generator=OpenAIAnswerGenerator(
-                client=client,
-                model=configured.openai_model,
-                timeout_seconds=configured.openai_timeout_seconds,
-            ),
-        )
-        return await service.execute(
-            user_id=user_id,
-            message=message,
-            request_id=request_id,
-            user_agent=user_agent,
-            started_at=started_at,
-        )
+    def __init__(self, *, db: Transaction, repository: ChatExchangeRepository) -> None:
+        self._db = db
+        self._repository = repository
 
+    def list_chat_exchange_history(
+        self,
+        *,
+        user_id: int,
+    ) -> list[ChatExchangeHistoryItem]:
+        """로그인 사용자의 ChatExchange history를 내부 오류 없이 projection한다."""
 
-def list_chat_exchange_history(
-    *,
-    user_id: int,
-    db: Session,
-) -> list[ChatExchangeHistoryItem]:
-    """로그인 사용자의 ChatExchange history를 내부 오류 없이 projection한다."""
+        try:
+            exchanges = self._repository.list_user_exchanges(user_id=user_id)
+        except Exception as error:
+            self._db.rollback()
+            raise ChatPersistenceError(is_write=False) from error
 
-    repository: ChatExchangeRepository = SqlAlchemyChatExchangeRepository(db=db)
-    try:
-        exchanges = repository.list_user_exchanges(user_id=user_id)
-    except Exception as error:
-        db.rollback()
-        raise ChatPersistenceError(is_write=False) from error
+        return [_to_history_item(exchange) for exchange in exchanges]
 
-    return [_to_history_item(exchange) for exchange in exchanges]
+    def get_chat_exchange(
+        self, *, user_id: int, chat_exchange_id: int
+    ) -> ChatExchangeHistoryItem | None:
+        """사용자 소유의 단일 ChatExchange를 안전한 projection으로 반환한다."""
 
-
-def get_chat_exchange(
-    *, user_id: int, chat_exchange_id: int, db: Session
-) -> ChatExchangeHistoryItem | None:
-    """사용자 소유의 단일 ChatExchange를 안전한 projection으로 반환한다."""
-
-    repository: ChatExchangeRepository = SqlAlchemyChatExchangeRepository(db=db)
-    try:
-        exchange = repository.get_user_exchange(
-            user_id=user_id,
-            chat_exchange_id=chat_exchange_id,
-        )
-    except Exception as error:
-        db.rollback()
-        raise ChatPersistenceError(is_write=False) from error
-    return _to_history_item(exchange) if exchange is not None else None
+        try:
+            exchange = self._repository.get_user_exchange(
+                user_id=user_id,
+                chat_exchange_id=chat_exchange_id,
+            )
+        except Exception as error:
+            self._db.rollback()
+            raise ChatPersistenceError(is_write=False) from error
+        return _to_history_item(exchange) if exchange is not None else None
 
 
 def _elapsed_time_ms(started_at: float) -> int:

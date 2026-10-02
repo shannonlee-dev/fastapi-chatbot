@@ -2,25 +2,16 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass
 from typing import Annotated
 
 from fastapi import Depends, HTTPException, Request, status
 from sqlalchemy.orm import Session
 
-from app.auth.models import ADMIN_ROLE
-from app.auth.repository import get_user_by_id
+from app.auth.application import get_authenticated_user
+from app.auth.schemas import AuthenticatedUser
 from app.core.database import get_db
 
 SESSION_USER_ID_KEY = "user_id"
-
-
-@dataclass(frozen=True)
-class AuthenticatedUser:
-    """보호된 HTML 화면에 제공하는 최소 사용자 정보다."""
-
-    user_id: int
-    is_admin: bool
 
 
 def set_session_user_id(request: Request, *, user_id: int) -> None:
@@ -53,21 +44,13 @@ def get_current_user_id(
 ) -> int:
     """보호된 JSON route에서 login 사용자의 ID를 반환한다."""
 
-    user_id = get_session_user_id(request)
-    if user_id is None:
-        clear_session_user_id(request)
+    authenticated_user = get_optional_authenticated_user(request, db)
+    if authenticated_user is None:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="로그인이 필요합니다.",
         )
-
-    if get_user_by_id(db=db, user_id=user_id) is None:
-        clear_session_user_id(request)
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="로그인이 필요합니다.",
-        )
-    return user_id
+    return authenticated_user.user_id
 
 
 def require_authenticated_user(
@@ -93,15 +76,12 @@ def get_optional_authenticated_user(
         clear_session_user_id(request)
         return None
 
-    user = get_user_by_id(db=db, user_id=user_id)
+    user = get_authenticated_user(db=db, user_id=user_id)
     if user is None:
         clear_session_user_id(request)
         return None
 
-    return AuthenticatedUser(
-        user_id=user.id,
-        is_admin=user.role == ADMIN_ROLE,
-    )
+    return user
 
 
 def require_admin(

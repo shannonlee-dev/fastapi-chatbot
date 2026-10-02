@@ -95,7 +95,7 @@ uv run uvicorn app.main:app --host 0.0.0.0 --port $PORT
 
 ## Architecture
 
-Application은 하나의 FastAPI process 안에서 책임별 module을 분리한 modular monolith입니다. 기본 의존 방향은 `Main·Router → Service → Repository → Core`입니다.
+Application은 하나의 FastAPI process 안에서 책임별 module을 분리한 modular monolith입니다. 기본 의존 방향은 `Main·Router → Application → Service → Repository → Core`입니다. 각 module의 `application.py`가 production 의존성을 조립하고, Service는 Repository·transaction 계약을 주입받아 use case를 처리합니다.
 
 ```mermaid
 flowchart LR
@@ -103,7 +103,10 @@ flowchart LR
     UI[UI Router]
     ChatRouter[Chat Router]
     AdminRouter[Admin Router]
-    Auth[Auth Service / Dependency]
+    Auth[Auth Application / Dependency]
+    AuthService[Auth Service]
+    ChatApplication[Chat Application]
+    AdminApplication[Admin Application]
     ChatService[Chat Service]
     AdminService[Admin Service]
     Repository[SQLAlchemy Repository]
@@ -114,15 +117,19 @@ flowchart LR
     Browser --> ChatRouter
     Browser --> AdminRouter
     UI --> Auth
-    UI --> ChatService
+    UI --> ChatApplication
     ChatRouter --> Auth
-    ChatRouter --> ChatService
+    ChatRouter --> ChatApplication
     AdminRouter --> Auth
-    AdminRouter --> AdminService
+    AdminRouter --> AdminApplication
+    Auth --> AuthService
+    AuthService --> Repository
+    ChatApplication --> ChatService
+    AdminApplication --> AdminService
     ChatService --> Repository
     AdminService --> Repository
     Repository --> DB
-    ChatService --> OpenAI
+    ChatApplication --> OpenAI
 ```
 
 ### 파일별 역할
@@ -134,13 +141,17 @@ flowchart LR
 | `app/core/database.py` | SQLAlchemy `Base`, engine, `SessionLocal`, 요청별 DB session과 table 초기화 |
 | `app/core/security.py` | PBKDF2-SHA256 password hash와 constant-time 검증 |
 | `app/core/request_id.py` | 요청별 UUID 생성, `request.state`와 `X-Request-ID` 연결 |
+| `app/*/application.py` | Auth·Chat·Admin 공개 진입점과 Repository·Service·외부 Adapter 조립 |
+| `app/core/transactions.py` | Service가 사용하는 `commit()`·`rollback()` 계약 |
+| `app/auth/schemas.py` | 화면에 제공하는 최소 사용자 정보 `AuthenticatedUser` |
+| `app/auth/errors.py` | 회원가입·초기 관리자 생성의 domain 오류 |
 | `app/auth/models.py` | `users` ORM model과 user·admin 역할 정의 |
 | `app/auth/repository.py` | User 생성·조회와 관리자 계정 조회 |
 | `app/auth/service.py` | 회원가입, login 인증, 초기 관리자 bootstrap과 transaction 처리 |
 | `app/auth/dependencies.py` | Session user ID helper, JSON API 로그인 검사, 관리자 권한 검사 |
 | `app/chat/router.py` | Chat·본인 기록 JSON endpoint와 공통 JSON 오류 응답 |
-| `app/chat/schemas.py` | Chat request·response와 오류 Pydantic schema, 질문 입력 정규화·검증 |
-| `app/chat/service.py` | 사용자 문맥 조회, OpenAI 호출, 성공·실패 기록 transaction |
+| `app/chat/schemas.py` | Chat 결과·history read model, HTTP request·response와 질문 입력 정규화·검증 |
+| `app/chat/service.py` | 주입받은 Repository·AnswerGenerator로 질문 처리·기록 transaction과 본인 history 조회 |
 | `app/chat/context.py` | System prompt와 최근 성공 대화를 OpenAI message로 구성 |
 | `app/chat/openai_client.py` | OpenAI SDK adapter, model·timeout 적용, API 오류 변환 |
 | `app/chat/models.py` | `chat_exchanges` ORM model과 DB constraint |

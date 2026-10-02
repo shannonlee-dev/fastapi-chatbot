@@ -8,8 +8,10 @@ from sqlalchemy.inspection import inspect
 from sqlalchemy.orm import Session
 
 import app.auth.service as service_module
+from app.auth.application import register_user
+from app.auth.errors import RegistrationError, RegistrationReason
 from app.auth.models import USER_ROLE, User
-from app.auth.service import RegistrationError, RegistrationReason, register_user
+from app.auth.repository import SqlAlchemyUserRepository
 from app.core.security import verify_password
 
 
@@ -109,9 +111,9 @@ def test_register_user_maps_unique_constraint_race_to_duplicate_error(
     db.add(User(username="race-user", password_hash="existing-hash"))
     db.commit()
     monkeypatch.setattr(
-        service_module,
+        SqlAlchemyUserRepository,
         "get_user_by_username",
-        lambda **_kwargs: None,
+        lambda self, **_kwargs: None,
     )
     monkeypatch.setattr(
         service_module,
@@ -138,11 +140,11 @@ def test_register_user_rolls_back_unexpected_persistence_error(
 ) -> None:
     password = "secret-password"
 
-    def fail_create_user(**_kwargs: object) -> User:
+    def fail_create_user(_self: SqlAlchemyUserRepository, **_kwargs: object) -> User:
         raise RuntimeError("database save failed")
 
     monkeypatch.setattr(service_module, "hash_password", lambda _password: "hash")
-    monkeypatch.setattr(service_module, "create_user", fail_create_user)
+    monkeypatch.setattr(SqlAlchemyUserRepository, "create_user", fail_create_user)
 
     with pytest.raises(RuntimeError, match="database save failed") as captured:
         register_user(db=db, username="new-user", password=password)

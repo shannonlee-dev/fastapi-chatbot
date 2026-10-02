@@ -9,13 +9,10 @@ from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 import app.auth.service as service_module
+from app.auth.application import ensure_initial_admin
+from app.auth.errors import AdminBootstrapError, AdminBootstrapReason
 from app.auth.models import ADMIN_ROLE, USER_ROLE, User
-from app.auth.repository import create_user, get_user_by_username
-from app.auth.service import (
-    AdminBootstrapError,
-    AdminBootstrapReason,
-    ensure_initial_admin,
-)
+from app.auth.repository import SqlAlchemyUserRepository
 from app.core.config import Settings
 from app.core.security import verify_password
 
@@ -60,7 +57,7 @@ def test_ensure_initial_admin_creates_hashed_admin_account(
     ensure_initial_admin(db=db, app_settings=app_settings)
 
     assert not db.in_transaction()
-    admin = get_user_by_username(db=db, username="admin")
+    admin = SqlAlchemyUserRepository(db=db).get_user_by_username(username="admin")
     assert admin is not None
     assert admin.role == ADMIN_ROLE
     assert admin.password_hash != password
@@ -77,7 +74,7 @@ def test_ensure_initial_admin_creates_account_with_configured_username(
     ensure_initial_admin(db=db, app_settings=app_settings)
 
     assert not db.in_transaction()
-    admin = get_user_by_username(db=db, username=username)
+    admin = SqlAlchemyUserRepository(db=db).get_user_by_username(username=username)
     assert admin is not None
     assert admin.role == ADMIN_ROLE
     assert verify_password(password, admin.password_hash)
@@ -101,8 +98,7 @@ def test_ensure_initial_admin_preserves_existing_admin_without_password(
     monkeypatch: pytest.MonkeyPatch,
     db: Session,
 ) -> None:
-    admin = create_user(
-        db=db,
+    admin = SqlAlchemyUserRepository(db=db).create_user(
         username="existing-admin",
         password_hash="existing-hash",
         role=ADMIN_ROLE,
@@ -123,7 +119,9 @@ def test_ensure_initial_admin_preserves_existing_admin_without_password(
     assert saved is not None
     assert saved.password_hash == "existing-hash"
     assert saved.role == ADMIN_ROLE
-    assert get_user_by_username(db=db, username="admin") is None
+    assert (
+        SqlAlchemyUserRepository(db=db).get_user_by_username(username="admin") is None
+    )
 
 
 def test_ensure_initial_admin_rejects_missing_password(
@@ -198,8 +196,7 @@ def test_ensure_initial_admin_rejects_existing_non_admin_account(
     db: Session,
     caplog: pytest.LogCaptureFixture,
 ) -> None:
-    user = create_user(
-        db=db,
+    user = SqlAlchemyUserRepository(db=db).create_user(
         username="admin",
         password_hash="existing-hash",
         role=USER_ROLE,
@@ -234,10 +231,10 @@ def test_ensure_initial_admin_contains_lookup_error(
     sensitive_error = "SELECT password_hash Cookie secret traceback"
     app_settings = _admin_settings(password="initial-admin-password")
 
-    def fail_lookup(**_kwargs: object) -> User | None:
+    def fail_lookup(_self: SqlAlchemyUserRepository, **_kwargs: object) -> User | None:
         raise RuntimeError(sensitive_error)
 
-    monkeypatch.setattr(service_module, "get_admin_user", fail_lookup)
+    monkeypatch.setattr(SqlAlchemyUserRepository, "get_admin_user", fail_lookup)
 
     with (
         caplog.at_level(logging.ERROR, logger=service_module.__name__),
@@ -268,7 +265,7 @@ def test_ensure_initial_admin_rolls_back_write_errors(
         raise RuntimeError(sensitive_error)
 
     if failure_point == "create":
-        monkeypatch.setattr(service_module, "create_user", fail_write)
+        monkeypatch.setattr(SqlAlchemyUserRepository, "create_user", fail_write)
     else:
         monkeypatch.setattr(db, "commit", fail_write)
 

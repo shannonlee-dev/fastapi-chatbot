@@ -14,10 +14,10 @@ from fastapi.testclient import TestClient
 from sqlalchemy.orm import Session
 
 import app.ui.router as router_module
+from app.auth.errors import RegistrationError, RegistrationReason
 from app.auth.models import ADMIN_ROLE, USER_ROLE
-from app.auth.repository import create_user
-from app.auth.service import RegistrationError, RegistrationReason
-from app.chat.service import ChatExchangeHistoryItem
+from app.auth.repository import SqlAlchemyUserRepository
+from app.chat.schemas import ChatExchangeHistoryItem
 from app.core.database import get_db
 
 
@@ -74,7 +74,9 @@ def test_root_redirects_authenticated_user_to_chat(
     client: TestClient,
     db: Session,
 ) -> None:
-    user = create_user(db=db, username="root-user", password_hash="test-hash")
+    user = SqlAlchemyUserRepository(db=db).create_user(
+        username="root-user", password_hash="test-hash"
+    )
     db.commit()
     _set_session(app, {"user_id": user.id})
 
@@ -132,8 +134,7 @@ def test_get_auth_form_redirects_authenticated_user_to_chat(
     db: Session,
     path: str,
 ) -> None:
-    user = create_user(
-        db=db,
+    user = SqlAlchemyUserRepository(db=db).create_user(
         username=f"redirect-{path[1:]}-user",
         password_hash="test-hash",
     )
@@ -388,7 +389,9 @@ def test_chat_passes_service_history_in_latest_first_order_and_exact_context(
     db: Session,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    user = create_user(db=db, username="chat-user", password_hash="test-hash")
+    user = SqlAlchemyUserRepository(db=db).create_user(
+        username="chat-user", password_hash="test-hash"
+    )
     db.commit()
     _set_session(app, {"user_id": user.id})
     history = [
@@ -447,8 +450,7 @@ def test_chat_renders_admin_navigation_only_for_admin(
     role: str,
     expected_admin_navigation: bool,
 ) -> None:
-    user = create_user(
-        db=db,
+    user = SqlAlchemyUserRepository(db=db).create_user(
         username=f"{role}-chat-user",
         password_hash="test-hash",
         role=role,
@@ -500,8 +502,7 @@ def test_chat_allows_history_failure_to_reach_global_exception_handling(
     db: Session,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    user = create_user(
-        db=db,
+    user = SqlAlchemyUserRepository(db=db).create_user(
         username="failing-chat-user",
         password_hash="test-hash",
     )

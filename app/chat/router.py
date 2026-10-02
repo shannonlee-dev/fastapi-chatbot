@@ -8,13 +8,17 @@ from fastapi import APIRouter, Depends, Request, Response, status
 from sqlalchemy.orm import Session
 
 from app.auth.dependencies import get_current_user_id
+from app.chat.application import (
+    get_chat_exchange,
+    list_chat_exchange_history,
+    process_chat,
+)
 from app.chat.errors import ChatError
-from app.chat.http import chat_error_to_app_error
+from app.chat.http import chat_error_to_app_error, normalize_user_agent
 from app.chat.schemas import (
     ChatExchangeResponse,
     ChatRequest,
 )
-from app.chat.service import get_chat_exchange, list_chat_exchange_history, process_chat
 from app.core.config import Settings, get_settings
 from app.core.database import get_db
 from app.core.errors import AppError
@@ -71,7 +75,7 @@ async def post_chat(
             user_id=user_id,
             message=payload.message,
             request_id=get_request_id(request),
-            user_agent=_normalize_user_agent(request.headers.get("user-agent")),
+            user_agent=normalize_user_agent(request.headers.get("user-agent")),
             db=db,
             app_settings=app_settings,
         )
@@ -137,9 +141,3 @@ def get_chat_exchange_by_id(
     if exchange is None:
         raise AppError(status_code=404, code="conversation_not_found")
     return ChatExchangeResponse.model_validate(exchange)
-
-
-def _normalize_user_agent(user_agent: str | None) -> str | None:
-    """운영 metadata column 길이 안에서 User-Agent를 보관한다."""
-
-    return user_agent[:512] if user_agent is not None else None

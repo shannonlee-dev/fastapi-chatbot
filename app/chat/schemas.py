@@ -1,13 +1,34 @@
-"""Chat REST API의 request·response schema다."""
+"""Chat의 use case 결과와 HTTP request·response schema다."""
 
 from __future__ import annotations
 
+from dataclasses import dataclass
 from datetime import datetime
 
 from pydantic import BaseModel, ConfigDict, StrictStr, field_validator
 from pydantic_core import PydanticCustomError
 
 MAX_MESSAGE_LENGTH = 1000
+
+
+@dataclass(frozen=True)
+class ChatResult:
+    """성공적으로 저장된 Chat 처리 결과다."""
+
+    chat_exchange_id: int
+    answer: str
+    created_at: datetime
+
+
+@dataclass(frozen=True)
+class ChatExchangeHistoryItem:
+    """사용자 화면에 안전하게 전달할 ChatExchange history 항목이다."""
+
+    chat_exchange_id: int
+    question: str
+    answer: str | None
+    status: str
+    created_at: datetime
 
 
 class ChatRequest(BaseModel):

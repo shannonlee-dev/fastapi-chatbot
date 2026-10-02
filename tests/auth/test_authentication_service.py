@@ -5,9 +5,9 @@ from __future__ import annotations
 import pytest
 from sqlalchemy.orm import Session
 
+from app.auth.application import authenticate_user
 from app.auth.models import User
-from app.auth.repository import create_user
-from app.auth.service import authenticate_user
+from app.auth.repository import SqlAlchemyUserRepository
 from app.core.security import hash_password
 
 _PASSWORD = "  correct-password  "
@@ -21,8 +21,7 @@ def encoded_password() -> str:
 
 
 def _save_user(*, db: Session, password_hash: str) -> User:
-    user = create_user(
-        db=db,
+    user = SqlAlchemyUserRepository(db=db).create_user(
         username="test-user",
         password_hash=password_hash,
     )

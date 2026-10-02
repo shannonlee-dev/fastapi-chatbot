@@ -6,7 +6,7 @@ from pathlib import Path
 
 import pytest
 
-from app.chat.service import ChatExchangeHistoryItem
+from app.chat.schemas import ChatExchangeHistoryItem
 from app.ui.templating import templates
 
 PROJECT_ROOT = Path(__file__).resolve().parents[2]

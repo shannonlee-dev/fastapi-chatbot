@@ -17,11 +17,8 @@ from fastapi.testclient import TestClient
 from pydantic import ValidationError
 from sqlalchemy.orm import Session
 
-from app.auth.dependencies import (
-    AuthenticatedUser,
-    get_current_user_id,
-    require_authenticated_user,
-)
+from app.auth.dependencies import get_current_user_id, require_authenticated_user
+from app.auth.schemas import AuthenticatedUser
 from app.core import config as config_module
 from app.core.config import Settings
 from app.core.database import Base, get_db
@@ -126,7 +123,7 @@ def test_chat_receives_application_settings(
     from datetime import UTC, datetime
 
     import app.chat.router as chat_router
-    from app.chat.service import ChatResult
+    from app.chat.schemas import ChatResult
 
     configured = _settings()
     configured.openai_model = "application-model"

@@ -9,6 +9,14 @@ from app.chat.errors import (
 )
 from app.core.errors import AppError
 
+MAX_USER_AGENT_LENGTH = 512
+
+
+def normalize_user_agent(user_agent: str | None) -> str | None:
+    """HTTP User-Agent를 운영 metadata column 길이에 맞춘다."""
+
+    return user_agent[:MAX_USER_AGENT_LENGTH] if user_agent is not None else None
+
 
 def chat_error_to_app_error(error: ChatError) -> AppError:
     """내부 예외 원문을 포함하지 않는 status·code·header를 반환한다."""

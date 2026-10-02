@@ -2,31 +2,34 @@
 
 from __future__ import annotations
 
-from sqlalchemy.orm import Session
-
 from app.admin.errors import AdminReadError
 from app.admin.repository import (
     AdminChatOperationMetadataRow,
     AdminRepository,
-    SqlAlchemyAdminRepository,
 )
 from app.admin.schemas import AdminChatOperationMetadataItem
+from app.core.transactions import Transaction
 
 
-def list_admin_chat_operation_metadata(
-    *,
-    db: Session,
-) -> list[AdminChatOperationMetadataItem]:
-    """관리자 화면에 안전한 운영 metadata만 최신순으로 제공한다."""
+class AdminService:
+    """관리자 운영 metadata 조회와 안전한 화면 정보 변환을 처리한다."""
 
-    repository: AdminRepository = SqlAlchemyAdminRepository(db=db)
-    try:
-        rows = repository.list_chat_operation_metadata()
-    except Exception as error:
-        db.rollback()
-        raise AdminReadError from error
+    def __init__(self, *, db: Transaction, repository: AdminRepository) -> None:
+        self._db = db
+        self._repository = repository
 
-    return [_to_metadata_item(row) for row in rows]
+    def list_admin_chat_operation_metadata(
+        self,
+    ) -> list[AdminChatOperationMetadataItem]:
+        """관리자 화면에 안전한 운영 metadata만 최신순으로 제공한다."""
+
+        try:
+            rows = self._repository.list_chat_operation_metadata()
+        except Exception as error:
+            self._db.rollback()
+            raise AdminReadError from error
+
+        return [_to_metadata_item(row) for row in rows]
 
 
 def _to_metadata_item(

@@ -72,37 +72,3 @@ class SqlAlchemyUserRepository:
         self._db.add(user)
         self._db.flush()
         return user
-
-
-def get_user_by_id(*, db: Session, user_id: int) -> User | None:
-    """기존 호출자를 위해 ID 기반 조회를 repository에 위임한다."""
-
-    return SqlAlchemyUserRepository(db=db).get_user_by_id(user_id=user_id)
-
-
-def get_user_by_username(*, db: Session, username: str) -> User | None:
-    """기존 호출자를 위해 username 기반 조회를 repository에 위임한다."""
-
-    return SqlAlchemyUserRepository(db=db).get_user_by_username(username=username)
-
-
-def get_admin_user(*, db: Session) -> User | None:
-    """기존 호출자를 위해 관리자 조회를 repository에 위임한다."""
-
-    return SqlAlchemyUserRepository(db=db).get_admin_user()
-
-
-def create_user(
-    *,
-    db: Session,
-    username: str,
-    password_hash: str,
-    role: str = USER_ROLE,
-) -> User:
-    """기존 호출자를 위해 User 생성을 repository에 위임한다."""
-
-    return SqlAlchemyUserRepository(db=db).create_user(
-        username=username,
-        password_hash=password_hash,
-        role=role,
-    )

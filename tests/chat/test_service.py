@@ -6,17 +6,14 @@ import asyncio
 import time
 from collections.abc import Callable, Sequence
 from datetime import UTC, datetime, timedelta
-from typing import Self
 
 import pytest
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-import app.chat.service as service_module
 from app.auth.models import User
 from app.chat.context import SYSTEM_PROMPT, ChatMessage
 from app.chat.errors import (
-    ChatConfigurationError,
     ChatGenerationError,
     ChatInvalidResponseError,
     ChatPersistenceError,
@@ -26,12 +23,7 @@ from app.chat.errors import (
 )
 from app.chat.models import ChatExchange
 from app.chat.repository import SqlAlchemyChatExchangeRepository
-from app.chat.service import (
-    AnswerGenerator,
-    ChatService,
-    get_chat_exchange,
-    list_chat_exchange_history,
-)
+from app.chat.service import AnswerGenerator, ChatHistoryService, ChatService
 
 
 class RecordingGenerator:
@@ -68,19 +60,6 @@ class UnexpectedErrorGenerator:
 
     async def generate(self, *, messages: Sequence[ChatMessage]) -> str:
         raise RuntimeError("unexpected generator failure")
-
-
-class FakeAsyncOpenAIClient:
-    """Production wrapper의 client context manager 경계만 대체한다."""
-
-    def __init__(self) -> None:
-        self.closed = False
-
-    async def __aenter__(self) -> Self:
-        return self
-
-    async def __aexit__(self, *_args: object) -> None:
-        self.closed = True
 
 
 class FailingSaveRepository(SqlAlchemyChatExchangeRepository):
@@ -511,107 +490,6 @@ def test_failed_record_commit_failure_takes_priority_over_generation_error(
     assert not db.in_transaction()
 
 
-def test_production_wrapper_logs_safely_before_client_configuration_failure(
-    db: Session,
-    caplog: pytest.LogCaptureFixture,
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    def fail_client_creation(**kwargs: object) -> object:
-        raise ChatConfigurationError()
-
-    monkeypatch.setattr(service_module, "create_openai_client", fail_client_creation)
-
-    with (
-        caplog.at_level("INFO", logger="app.chat.service"),
-        pytest.raises(ChatConfigurationError),
-    ):
-        asyncio.run(
-            service_module.process_chat(
-                user_id=1,
-                message="SELECT stack api-key Cookie internal error_message",
-                request_id="wrapper-config-id",
-                user_agent="Cookie secret",
-                db=db,
-            )
-        )
-
-    _assert_safe_request_id_logs(
-        _service_log_messages(caplog),
-        request_id="wrapper-config-id",
-        expected_events={"request_received"},
-    )
-
-
-def test_production_wrapper_does_not_revalidate_message_before_persistence(
-    db: Session,
-    user_id: int,
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    client = FakeAsyncOpenAIClient()
-    received: dict[str, object] = {}
-    current_time = 10.0
-
-    def fake_perf_counter() -> float:
-        return current_time
-
-    def create_client(**kwargs: object) -> FakeAsyncOpenAIClient:
-        nonlocal current_time
-        current_time = 10.2
-        return client
-
-    class FakeProductionGenerator:
-        def __init__(
-            self, *, client: object, model: str, timeout_seconds: float
-        ) -> None:
-            received.update({"client": client, "model": model})
-
-        async def generate(self, *, messages: Sequence[ChatMessage]) -> str:
-            nonlocal current_time
-            current_time = 10.5
-            received["messages"] = list(messages)
-            return "production wrapper answer"
-
-    monkeypatch.setattr(service_module.time, "perf_counter", fake_perf_counter)
-    monkeypatch.setattr(service_module, "create_openai_client", create_client)
-    monkeypatch.setattr(service_module.settings, "openai_model", "configured-model")
-    monkeypatch.setattr(
-        service_module, "OpenAIAnswerGenerator", FakeProductionGenerator
-    )
-
-    result = asyncio.run(
-        service_module.process_chat(
-            user_id=user_id,
-            message="  wrapper question  ",
-            request_id="wrapper-success-request",
-            user_agent="wrapper-agent",
-            db=db,
-        )
-    )
-    saved = db.get(ChatExchange, result.chat_exchange_id)
-
-    assert client.closed is True
-    assert received["client"] is client
-    assert received["model"] == "configured-model"
-    assert received["messages"] == [
-        {"role": "system", "content": SYSTEM_PROMPT},
-        {"role": "user", "content": "  wrapper question  "},
-    ]
-    assert saved is not None
-    assert (
-        saved.question,
-        saved.answer,
-        saved.request_id,
-        saved.user_agent,
-        saved.response_time_ms,
-    ) == (
-        "  wrapper question  ",
-        "production wrapper answer",
-        "wrapper-success-request",
-        "wrapper-agent",
-        500,
-    )
-
-
 def test_history_projection_is_user_scoped_and_omits_internal_error(
     db: Session,
     user_id: int,
@@ -647,7 +525,10 @@ def test_history_projection_is_user_scoped_and_omits_internal_error(
     )
     db.commit()
 
-    history = list_chat_exchange_history(user_id=user_id, db=db)
+    service = ChatHistoryService(
+        db=db, repository=SqlAlchemyChatExchangeRepository(db=db)
+    )
+    history = service.list_chat_exchange_history(user_id=user_id)
 
     assert len(history) == 1
     assert history[0].question == "mine"
@@ -655,23 +536,19 @@ def test_history_projection_is_user_scoped_and_omits_internal_error(
 
 
 @pytest.mark.parametrize(
-    ("read_history", "extra_arguments"),
+    ("method_name", "extra_arguments"),
     [
-        (list_chat_exchange_history, {}),
-        (get_chat_exchange, {"chat_exchange_id": 1}),
+        ("list_chat_exchange_history", {}),
+        ("get_chat_exchange", {"chat_exchange_id": 1}),
     ],
 )
 def test_history_read_failures_are_classified_as_non_write_errors(
     db: Session,
     user_id: int,
-    monkeypatch: pytest.MonkeyPatch,
-    read_history: Callable[..., object],
+    method_name: str,
     extra_arguments: dict[str, object],
 ) -> None:
-    monkeypatch.setattr(
-        service_module, "SqlAlchemyChatExchangeRepository", FailingReadRepository
-    )
+    service = ChatHistoryService(db=db, repository=FailingReadRepository(db=db))
+    read_history = getattr(service, method_name)
 
-    _assert_read_failure(
-        lambda: read_history(user_id=user_id, db=db, **extra_arguments)
-    )
+    _assert_read_failure(lambda: read_history(user_id=user_id, **extra_arguments))

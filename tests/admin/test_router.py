@@ -14,7 +14,7 @@ import app.admin.router as router_module
 from app.admin.errors import AdminReadError
 from app.admin.schemas import AdminChatOperationMetadataItem
 from app.auth.models import ADMIN_ROLE
-from app.auth.repository import create_user
+from app.auth.repository import SqlAlchemyUserRepository
 from app.chat.models import ChatExchange
 from app.core.database import get_db
 from app.core.request_id import RequestIdMiddleware
@@ -44,8 +44,7 @@ def client(app: FastAPI) -> TestClient:
 
 @pytest.fixture
 def admin_client(app: FastAPI, client: TestClient, db: Session) -> TestClient:
-    admin = create_user(
-        db=db,
+    admin = SqlAlchemyUserRepository(db=db).create_user(
         username="admin-user",
         password_hash="test-hash",
         role=ADMIN_ROLE,
@@ -68,7 +67,9 @@ def test_admin_logs_rejects_regular_user(
     client: TestClient,
     db: Session,
 ) -> None:
-    user = create_user(db=db, username="regular-user", password_hash="test-hash")
+    user = SqlAlchemyUserRepository(db=db).create_user(
+        username="regular-user", password_hash="test-hash"
+    )
     app.state.session = {"user_id": user.id}
 
     response = client.get("/admin/logs")
@@ -80,8 +81,7 @@ def test_admin_logs_renders_safe_metadata_for_admin(
     admin_client: TestClient,
     db: Session,
 ) -> None:
-    user = create_user(
-        db=db,
+    user = SqlAlchemyUserRepository(db=db).create_user(
         username='<script>alert("username")</script>',
         password_hash="password-hash-secret",
     )

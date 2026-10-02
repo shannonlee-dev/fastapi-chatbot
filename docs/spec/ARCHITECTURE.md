@@ -38,6 +38,7 @@ app/
 ├── main.py
 ├── admin/
 │   ├── router.py
+│   ├── application.py
 │   ├── service.py
 │   ├── repository.py
 │   └── schemas.py
@@ -73,7 +74,15 @@ app/
 
 ### 공통 원칙
 
-- 의존 방향은 `Main·Router → Service → Repository → Core`입니다.
+- 의존 방향은 `Main·Router → Application → Service → Repository → Core`입니다.
+- 각 business module의 `application.py`는 공개 use case 진입점이며 SQLAlchemy Repository,
+  Service와 외부 Adapter의 production 의존성을 조립합니다. Router는 이 진입점을 호출하고,
+  Service는 Repository 구현체나 외부 client를 직접 생성하지 않습니다.
+- `service.py`의 Service는 Repository `Protocol`과 `app/core/transactions.py`의
+  `Transaction` 계약을 생성자로 주입받습니다. `Transaction`은 `commit()`·`rollback()`만 제공하며
+  Service는 직접 SQL query를 실행하지 않습니다.
+- `errors.py`는 HTTP에 독립적인 domain 오류, `schemas.py`는 use case 결과와 화면·API의
+  안전한 read model을 소유합니다. HTTP 오류 의미 변환은 Router·`http.py`에서 처리합니다.
 - `app/main.py`는 router·middleware·model·DB 초기화를 조립하고 business rule을 구현하지 않습니다.
 - Router는 HTTP·form·template 변환, Service는 use case와 transaction, Repository는 DB 조회·변경만 담당합니다.
 - Repository는 `commit()`하지 않습니다. 쓰기 use case의 Service가 성공 시 `commit()`, 실패 시 `rollback()`합니다.
@@ -123,13 +132,12 @@ from app.core.request_id import RequestIdMiddleware, get_request_id
 ### Auth → UI·Chat
 
 ```python
-from app.auth.service import (
+from app.auth.application import (
     authenticate_user,
     ensure_initial_admin,
     register_user,
 )
 from app.auth.dependencies import (
-    AuthenticatedUser,
     clear_session_user_id,
     get_current_user_id,
     get_optional_authenticated_user,
@@ -138,6 +146,7 @@ from app.auth.dependencies import (
     require_admin,
     set_session_user_id,
 )
+from app.auth.schemas import AuthenticatedUser
 ```
 
 ```python
@@ -172,6 +181,9 @@ class AuthenticatedUser:
   username이 일반 사용자 역할로 이미 존재하면 자동 승격하지 않고 명확한 설정 오류로 시작을 중단합니다.
 - 초기 관리자 생성이 필요한데 password가 누락되었거나 유효하지 않으면 시작을 중단하고 원인을
   식별 가능한 log에 남깁니다. 초기 비밀번호 원문은 기록하지 않습니다.
+- `AuthService`는 사용자 인증·등록·초기 관리자 생성과 사용자 record의 `AuthenticatedUser`
+  변환을 담당합니다. Auth dependency는 `get_authenticated_user()` 공개 진입점을 사용하며
+  Repository나 ORM model을 직접 참조하지 않습니다.
 - Auth는 session에 사용자 ID를 저장·조회·삭제하는 public helper의 mechanics를 소유합니다.
   UI Router는 session key를 직접 읽거나 쓰지 않고, login 인증 성공과 logout 요청에서 이 helper를
   호출합니다.
@@ -193,6 +205,23 @@ class AuthenticatedUser:
 
 ### Chat → Auth·UI
 
+```python
+from app.chat.application import (
+    get_chat_exchange,
+    list_chat_exchange_history,
+    process_chat,
+)
+from app.chat.schemas import ChatExchangeHistoryItem, ChatResult
+```
+
+- `ChatService`는 질문 처리와 성공·실패 기록 transaction을 담당하고 `ChatHistoryService`는
+  사용자 소유 기록의 조회·안전한 read model 변환을 담당합니다. History 조회는 OpenAI client를
+  생성하지 않습니다.
+- `process_chat()`은 요청 수신 log와 시작 시각을 기록하고 실행 설정으로 OpenAI client를
+  생성합니다. 성공·실패에 관계없이 client context를 닫습니다. Service는 `AnswerGenerator`
+  계약만 사용하며 SDK 생성·설정을 알지 않습니다.
+- JSON·SSR Router는 `app/chat/http.py`의 오류 변환과 User-Agent 길이 제한을 공유합니다.
+
 - Chat은 Auth가 제공한 사용자 식별자와 request ID를 받아 질문을 처리하고, 사용자 소유 대화 기록을
   제공합니다.
 - 질문의 Pydantic validation, OpenAI 호출과 message 구성은 각각 [API 계약](api/API.md)과
@@ -203,7 +232,7 @@ class AuthenticatedUser:
 ### Admin → Auth·UI·Main
 
 ```python
-from app.admin.service import list_admin_chat_operation_metadata
+from app.admin.application import list_admin_chat_operation_metadata
 from app.admin.router import router as admin_router
 from app.auth.dependencies import require_admin
 ```
@@ -212,6 +241,8 @@ from app.auth.dependencies import require_admin
   제공합니다. 표시 field는 [DB schema 계약](db/DB.md)을 따릅니다.
 - Admin은 별도 JSON API, 수정·삭제 CRUD, 고급 검색·pagination, 별도 운영 log table, 별도
   역할·권한 table을 제공하지 않습니다. 사용자 역할은 `users.role`을 사용합니다.
+- `AdminService`는 주입받은 `AdminRepository`로 조회한 row를 안전한 화면 read model로
+  변환합니다. 조회 실패 시 transaction을 rollback하고 `AdminReadError`를 발생시킵니다.
 - Admin Router는 `app/main.py`의 `_register_routes()`를 통해 Main에 연결합니다.
 
 ### UI·Main integration

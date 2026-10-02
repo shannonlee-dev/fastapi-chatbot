@@ -19,7 +19,7 @@ from sqlalchemy import inspect
 from sqlalchemy.orm import Session
 
 from app.auth.models import ADMIN_ROLE, User
-from app.auth.repository import create_user
+from app.auth.repository import SqlAlchemyUserRepository
 from app.chat.models import ChatExchange
 from app.core import config as config_module
 from app.core.config import Settings
@@ -79,9 +79,10 @@ def _seed_users(db: Session) -> tuple[User, User]:
     from app.core.security import hash_password
 
     password_hash = hash_password("test-password")
-    user = create_user(db=db, username="evaluation-user", password_hash=password_hash)
-    admin = create_user(
-        db=db,
+    user = SqlAlchemyUserRepository(db=db).create_user(
+        username="evaluation-user", password_hash=password_hash
+    )
+    admin = SqlAlchemyUserRepository(db=db).create_user(
         username="evaluation-admin",
         password_hash=password_hash,
         role=ADMIN_ROLE,
@@ -284,7 +285,7 @@ def test_admin_chat_contract_request_id_matches_persisted_exchange(
     caplog: pytest.LogCaptureFixture,
 ) -> None:
     _user, _admin = _seed_users(db)
-    import app.chat.service as chat_service
+    import app.chat.application as chat_application
 
     class FakeOpenAIClient:
         def __init__(self) -> None:
@@ -308,11 +309,11 @@ def test_admin_chat_contract_request_id_matches_persisted_exchange(
             )
 
     monkeypatch.setattr(
-        chat_service, "create_openai_client", lambda **kwargs: FakeOpenAIClient()
+        chat_application, "create_openai_client", lambda **kwargs: FakeOpenAIClient()
     )
 
     _login(client, "evaluation-user")
-    with caplog.at_level("INFO", logger="app.chat.service"):
+    with caplog.at_level("INFO", logger="app.chat"):
         response = client.post(
             "/api/chat-exchanges",
             json={"message": "request scoped question"},

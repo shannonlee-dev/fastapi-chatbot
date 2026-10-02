@@ -1,4 +1,4 @@
-"""Render authentication and chat pages for browser clients."""
+"""Browser의 인증·Chat 화면과 form 요청을 처리한다."""
 
 from __future__ import annotations
 
@@ -9,23 +9,19 @@ from fastapi.responses import HTMLResponse, RedirectResponse, Response
 from pydantic import ValidationError
 from sqlalchemy.orm import Session
 
+from app.auth.application import authenticate_user, register_user
 from app.auth.dependencies import (
-    AuthenticatedUser,
     clear_session_user_id,
     get_optional_authenticated_user,
     require_authenticated_user,
     set_session_user_id,
 )
-from app.auth.service import (
-    RegistrationError,
-    RegistrationReason,
-    authenticate_user,
-    register_user,
-)
+from app.auth.errors import RegistrationError, RegistrationReason
+from app.auth.schemas import AuthenticatedUser
+from app.chat.application import list_chat_exchange_history, process_chat
 from app.chat.errors import ChatError
-from app.chat.http import chat_error_to_app_error
+from app.chat.http import chat_error_to_app_error, normalize_user_agent
 from app.chat.schemas import ChatRequest
-from app.chat.service import list_chat_exchange_history, process_chat
 from app.core.config import Settings, get_settings
 from app.core.database import get_db
 from app.core.i18n import get_message
@@ -33,13 +29,13 @@ from app.core.request_id import get_request_id
 from app.ui.responses import prevent_browser_caching
 from app.ui.templating import templates
 
-# Map registration failures to safe, user-facing messages.
+# 회원가입 domain 오류를 안전한 화면 message로 변환한다.
 _REGISTRATION_ERROR_MESSAGES = {
     RegistrationReason.USERNAME_LENGTH: "아이디는 3자 이상 30자 이하로 입력해주세요.",
     RegistrationReason.PASSWORD_LENGTH: "비밀번호는 8자 이상 72자 이하로 입력해주세요.",
     RegistrationReason.DUPLICATE_USERNAME: "이미 사용 중인 아이디입니다.",
 }
-# Avoid revealing which login credential was invalid.
+# 아이디와 비밀번호 중 어느 입력이 틀렸는지 노출하지 않는다.
 _LOGIN_ERROR_MESSAGE = "아이디 또는 비밀번호가 올바르지 않습니다."
 
 router = APIRouter()
@@ -47,7 +43,7 @@ router = APIRouter()
 
 @router.get("/", dependencies=[Depends(require_authenticated_user)])
 def get_root() -> RedirectResponse:
-    """Redirect an authenticated user to the chat page."""
+    """로그인 사용자를 Chat 화면으로 이동시킨다."""
 
     return _redirect_to("/chat")
 
@@ -60,7 +56,7 @@ def get_signup(
         Depends(get_optional_authenticated_user),
     ],
 ) -> Response:
-    """Render an empty signup form."""
+    """비어 있는 회원가입 form을 표시한다."""
 
     if authenticated_user is not None:
         return _redirect_to("/chat")
@@ -74,9 +70,9 @@ def post_signup(
     username: Annotated[str, Form()] = "",
     password: Annotated[str, Form()] = "",
 ) -> Response:
-    """Register a user or render a safe signup error."""
+    """회원가입을 처리하거나 안전한 오류를 form에 표시한다."""
 
-    # Normalize usernames while preserving the password exactly as submitted.
+    # 화면에 다시 표시할 username만 정리하고 password 원문은 유지한다.
     username = username.strip()
     try:
         register_user(
@@ -104,7 +100,7 @@ def get_login(
         Depends(get_optional_authenticated_user),
     ],
 ) -> Response:
-    """Render an empty login form."""
+    """비어 있는 login form을 표시한다."""
 
     if authenticated_user is not None:
         return _redirect_to("/chat")
@@ -118,9 +114,9 @@ def post_login(
     username: Annotated[str, Form()] = "",
     password: Annotated[str, Form()] = "",
 ) -> Response:
-    """Authenticate a user and establish the browser session."""
+    """사용자를 인증하고 Browser session을 설정한다."""
 
-    # Normalize usernames while preserving the password exactly as submitted.
+    # 화면에 다시 표시할 username만 정리하고 password 원문은 유지한다.
     username = username.strip()
     user = authenticate_user(
         db=db,
@@ -142,7 +138,7 @@ def post_login(
 
 @router.post("/logout")
 def post_logout(request: Request) -> RedirectResponse:
-    """Clear the current session and redirect to the login page."""
+    """현재 session을 제거하고 login 화면으로 이동시킨다."""
 
     clear_session_user_id(request)
     return _redirect_to("/login")
@@ -157,7 +153,7 @@ def get_chat(
     ],
     db: Annotated[Session, Depends(get_db)],
 ) -> Response:
-    """Render the authenticated user's chat history and input form."""
+    """로그인 사용자의 대화 기록과 질문 form을 표시한다."""
 
     return _render_chat(request=request, authenticated_user=authenticated_user, db=db)
 
@@ -193,7 +189,7 @@ async def post_chat_form(
             user_id=authenticated_user.user_id,
             message=payload.message,
             request_id=get_request_id(request),
-            user_agent=request.headers.get("user-agent", "")[:512] or None,
+            user_agent=normalize_user_agent(request.headers.get("user-agent")) or None,
             db=db,
             app_settings=app_settings,
         )
@@ -251,7 +247,7 @@ def _render_auth_template(
     username: str = "",
     status_code: int = status.HTTP_200_OK,
 ) -> Response:
-    """Render an authentication form with its safe display context."""
+    """안전한 화면 context로 인증 form을 표시한다."""
 
     return prevent_browser_caching(
         templates.TemplateResponse(
@@ -264,7 +260,7 @@ def _render_auth_template(
 
 
 def _redirect_to(path: str) -> RedirectResponse:
-    """Build the shared HTTP 303 redirect response."""
+    """공통 HTTP 303 이동 응답을 생성한다."""
 
     return prevent_browser_caching(
         RedirectResponse(url=path, status_code=status.HTTP_303_SEE_OTHER)

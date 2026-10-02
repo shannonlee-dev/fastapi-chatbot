@@ -12,8 +12,8 @@ from starlette.middleware.sessions import SessionMiddleware
 from starlette.staticfiles import StaticFiles
 
 from app.admin.router import router as admin_router
+from app.auth.application import ensure_initial_admin
 from app.auth.models import User
-from app.auth.service import ensure_initial_admin
 from app.chat.models import ChatExchange
 from app.chat.router import router as chat_router
 from app.core.config import Settings, settings

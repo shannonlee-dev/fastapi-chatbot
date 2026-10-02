@@ -8,9 +8,10 @@ from fastapi import FastAPI
 from fastapi.testclient import TestClient
 from sqlalchemy.orm import Session
 
-from app.auth.dependencies import AuthenticatedUser, require_authenticated_user
+from app.auth.dependencies import require_authenticated_user
+from app.auth.schemas import AuthenticatedUser
 from app.chat.errors import ChatTimeoutError
-from app.chat.service import ChatResult
+from app.chat.schemas import ChatResult
 from app.core.database import get_db
 from app.core.request_id import RequestIdMiddleware
 from app.ui.router import router

@@ -9,10 +9,10 @@ import pytest
 from sqlalchemy import text
 from sqlalchemy.orm import Session
 
-import app.admin.service as service_module
 from app.admin.errors import AdminReadError
 from app.admin.repository import AdminChatOperationMetadataRow
 from app.admin.schemas import AdminChatOperationMetadataItem
+from app.admin.service import AdminService
 
 
 class StaticAdminRepository:
@@ -49,15 +49,10 @@ class FailingAdminRepository:
 
 def test_list_metadata_maps_exact_safe_item_and_keeps_missing_username(
     db: Session,
-    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    monkeypatch.setattr(
-        service_module,
-        "SqlAlchemyAdminRepository",
-        StaticAdminRepository,
-    )
+    service = AdminService(db=db, repository=StaticAdminRepository(db=db))
 
-    items = service_module.list_admin_chat_operation_metadata(db=db)
+    items = service.list_admin_chat_operation_metadata()
 
     assert items == [
         AdminChatOperationMetadataItem(
@@ -91,18 +86,13 @@ def test_list_metadata_maps_exact_safe_item_and_keeps_missing_username(
 
 def test_list_metadata_rolls_back_and_raises_read_error_on_query_failure(
     db: Session,
-    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    monkeypatch.setattr(
-        service_module,
-        "SqlAlchemyAdminRepository",
-        FailingAdminRepository,
-    )
+    service = AdminService(db=db, repository=FailingAdminRepository(db=db))
     db.execute(text("SELECT 1"))
     assert db.in_transaction()
 
     with pytest.raises(AdminReadError) as captured:
-        service_module.list_admin_chat_operation_metadata(db=db)
+        service.list_admin_chat_operation_metadata()
 
     assert isinstance(captured.value.__cause__, RuntimeError)
     assert not db.in_transaction()

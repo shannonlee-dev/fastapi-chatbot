@@ -9,7 +9,6 @@ from fastapi import HTTPException, Request, status
 from sqlalchemy.orm import Session
 
 from app.auth.dependencies import (
-    AuthenticatedUser,
     clear_session_user_id,
     get_current_user_id,
     get_optional_authenticated_user,
@@ -19,7 +18,8 @@ from app.auth.dependencies import (
     set_session_user_id,
 )
 from app.auth.models import ADMIN_ROLE, USER_ROLE
-from app.auth.repository import create_user
+from app.auth.repository import SqlAlchemyUserRepository
+from app.auth.schemas import AuthenticatedUser
 
 
 def _make_request(session: Mapping[str, object]) -> Request:
@@ -66,8 +66,7 @@ def test_clear_session_user_id_removes_all_session_data() -> None:
 
 
 def test_get_current_user_id_returns_existing_session_user_id(db: Session) -> None:
-    user = create_user(
-        db=db,
+    user = SqlAlchemyUserRepository(db=db).create_user(
         username="json-auth-user",
         password_hash="test-hash",
     )
@@ -99,8 +98,7 @@ def test_get_current_user_id_rejects_invalid_session(
 
 
 def test_get_current_user_id_clears_deleted_user_session(db: Session) -> None:
-    user = create_user(
-        db=db,
+    user = SqlAlchemyUserRepository(db=db).create_user(
         username="deleted-json-auth-user",
         password_hash="test-hash",
     )
@@ -126,8 +124,7 @@ def test_require_authenticated_user_returns_minimal_user_data(
     role: str,
     expected_is_admin: bool,
 ) -> None:
-    user = create_user(
-        db=db,
+    user = SqlAlchemyUserRepository(db=db).create_user(
         username=f"{role}-user",
         password_hash="test-hash",
         role=role,
@@ -150,8 +147,7 @@ def test_get_optional_authenticated_user_returns_minimal_user_data(
     role: str,
     expected_is_admin: bool,
 ) -> None:
-    user = create_user(
-        db=db,
+    user = SqlAlchemyUserRepository(db=db).create_user(
         username=f"optional-{role}-user",
         password_hash="test-hash",
         role=role,
@@ -198,8 +194,7 @@ def test_require_authenticated_user_clears_stale_session_and_redirects(
 
 
 def test_require_admin_returns_admin_user_id(db: Session) -> None:
-    admin = create_user(
-        db=db,
+    admin = SqlAlchemyUserRepository(db=db).create_user(
         username="admin",
         password_hash="test-hash",
         role=ADMIN_ROLE,
@@ -209,8 +204,7 @@ def test_require_admin_returns_admin_user_id(db: Session) -> None:
 
 
 def test_require_admin_rejects_non_admin(db: Session) -> None:
-    user = create_user(
-        db=db,
+    user = SqlAlchemyUserRepository(db=db).create_user(
         username="regular-user",
         password_hash="test-hash",
     )

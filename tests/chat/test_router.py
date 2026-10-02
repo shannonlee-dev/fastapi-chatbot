@@ -18,7 +18,7 @@ import app.core.http as http_module
 import app.core.i18n as i18n_module
 from app.auth.dependencies import get_current_user_id
 from app.auth.models import User
-from app.auth.repository import create_user
+from app.auth.repository import SqlAlchemyUserRepository
 from app.chat.errors import (
     ChatGenerationError,
     ChatPersistenceError,
@@ -27,7 +27,7 @@ from app.chat.errors import (
     ChatTimeoutError,
 )
 from app.chat.models import ChatExchange
-from app.chat.service import ChatResult
+from app.chat.schemas import ChatResult
 from app.core.database import get_db
 from app.core.errors import AppError
 from app.core.request_id import REQUEST_ID_HEADER, RequestIdMiddleware
@@ -262,8 +262,7 @@ def test_post_chat_rejects_deleted_user_before_processing(
     db: Session,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    deleted_user = create_user(
-        db=db,
+    deleted_user = SqlAlchemyUserRepository(db=db).create_user(
         username="deleted-chat-user",
         password_hash="test-hash",
     )

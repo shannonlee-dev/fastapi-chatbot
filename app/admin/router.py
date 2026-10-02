@@ -9,8 +9,8 @@ from fastapi import APIRouter, Depends, Request
 from fastapi.responses import HTMLResponse, Response
 from sqlalchemy.orm import Session
 
+from app.admin.application import list_admin_chat_operation_metadata
 from app.admin.errors import AdminReadError
-from app.admin.service import list_admin_chat_operation_metadata
 from app.auth.dependencies import require_admin
 from app.core.database import get_db
 from app.core.request_id import get_request_id
