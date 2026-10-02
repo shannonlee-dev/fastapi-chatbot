@@ -7,7 +7,7 @@ from typing import Protocol
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from app.auth.models import ADMIN_ROLE, USER_ROLE, User
+from chatbot.auth.models import ADMIN_ROLE, USER_ROLE, User
 
 
 class UserRepository(Protocol):

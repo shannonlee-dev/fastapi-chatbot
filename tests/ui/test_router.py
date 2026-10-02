@@ -13,12 +13,12 @@ from fastapi.responses import HTMLResponse
 from fastapi.testclient import TestClient
 from sqlalchemy.orm import Session
 
-import app.ui.router as router_module
-from app.auth.models import ADMIN_ROLE, USER_ROLE
-from app.auth.repository import create_user
-from app.auth.service import RegistrationError, RegistrationReason
-from app.chat.service import ChatExchangeHistoryItem
-from app.core.database import get_db
+import chatbot.ui.router as router_module
+from chatbot.auth.models import ADMIN_ROLE, USER_ROLE
+from chatbot.auth.repository import create_user
+from chatbot.auth.service import RegistrationError, RegistrationReason
+from chatbot.chat.service import ChatExchangeHistoryItem
+from chatbot.core.database import get_db
 
 
 class CapturingTemplates:

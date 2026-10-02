@@ -6,14 +6,14 @@ from collections.abc import Sequence
 
 from openai import APIError, APITimeoutError, AsyncOpenAI
 
-from app.chat.context import ChatMessage
-from app.chat.errors import (
+from chatbot.chat.context import ChatMessage
+from chatbot.chat.errors import (
     ChatConfigurationError,
     ChatGenerationError,
     ChatInvalidResponseError,
     ChatTimeoutError,
 )
-from app.core.config import settings
+from chatbot.core.config import settings
 
 
 class OpenAIAnswerGenerator:

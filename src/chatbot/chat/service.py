@@ -11,18 +11,18 @@ from typing import Protocol
 
 from sqlalchemy.orm import Session
 
-from app.chat.context import ChatMessage, build_context_messages
-from app.chat.errors import (
+from chatbot.chat.context import ChatMessage, build_context_messages
+from chatbot.chat.errors import (
     ChatGenerationError,
     ChatPersistenceError,
 )
-from app.chat.models import ChatExchange
-from app.chat.openai_client import (
+from chatbot.chat.models import ChatExchange
+from chatbot.chat.openai_client import (
     OpenAIAnswerGenerator,
     create_openai_client,
     get_openai_model,
 )
-from app.chat.repository import (
+from chatbot.chat.repository import (
     ChatExchangeRepository,
     SqlAlchemyChatExchangeRepository,
 )

@@ -10,8 +10,8 @@ from sqlalchemy import create_engine, inspect
 from sqlalchemy.exc import IntegrityError, StatementError
 from sqlalchemy.orm import Session
 
-from app.chat.models import ChatExchange
-from app.chat.repository import SqlAlchemyChatExchangeRepository
+from chatbot.chat.models import ChatExchange
+from chatbot.chat.repository import SqlAlchemyChatExchangeRepository
 
 
 def test_repository_create_exchange_methods_flush_expected_states(

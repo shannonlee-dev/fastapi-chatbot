@@ -7,7 +7,7 @@ from typing import Protocol
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from app.chat.models import ChatExchange
+from chatbot.chat.models import ChatExchange
 
 
 class ChatExchangeRepository(Protocol):

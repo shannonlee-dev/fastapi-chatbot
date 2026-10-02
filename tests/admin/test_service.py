@@ -9,10 +9,10 @@ import pytest
 from sqlalchemy import text
 from sqlalchemy.orm import Session
 
-import app.admin.service as service_module
-from app.admin.errors import AdminReadError
-from app.admin.repository import AdminChatOperationMetadataRow
-from app.admin.schemas import AdminChatOperationMetadataItem
+import chatbot.admin.service as service_module
+from chatbot.admin.errors import AdminReadError
+from chatbot.admin.repository import AdminChatOperationMetadataRow
+from chatbot.admin.schemas import AdminChatOperationMetadataItem
 
 
 class StaticAdminRepository:

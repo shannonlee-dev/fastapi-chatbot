@@ -8,7 +8,7 @@ import pytest
 from fastapi import HTTPException, Request, status
 from sqlalchemy.orm import Session
 
-from app.auth.dependencies import (
+from chatbot.auth.dependencies import (
     AuthenticatedUser,
     clear_session_user_id,
     get_current_user_id,
@@ -18,8 +18,8 @@ from app.auth.dependencies import (
     require_authenticated_user,
     set_session_user_id,
 )
-from app.auth.models import ADMIN_ROLE, USER_ROLE
-from app.auth.repository import create_user
+from chatbot.auth.models import ADMIN_ROLE, USER_ROLE
+from chatbot.auth.repository import create_user
 
 
 def _make_request(session: Mapping[str, object]) -> Request:

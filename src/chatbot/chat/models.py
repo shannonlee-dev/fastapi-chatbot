@@ -7,8 +7,8 @@ from datetime import datetime
 from sqlalchemy import CheckConstraint, ForeignKey, Integer, String, Text
 from sqlalchemy.orm import Mapped, mapped_column
 
-from app.core.database import Base
-from app.core.db_types import UTCDateTime, utc_now
+from chatbot.core.database import Base
+from chatbot.core.db_types import UTCDateTime, utc_now
 
 
 class ChatExchange(Base):

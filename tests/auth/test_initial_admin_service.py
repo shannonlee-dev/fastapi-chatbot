@@ -8,16 +8,16 @@ import pytest
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
-import app.auth.service as service_module
-from app.auth.models import ADMIN_ROLE, USER_ROLE, User
-from app.auth.repository import create_user, get_user_by_username
-from app.auth.service import (
+import chatbot.auth.service as service_module
+from chatbot.auth.models import ADMIN_ROLE, USER_ROLE, User
+from chatbot.auth.repository import create_user, get_user_by_username
+from chatbot.auth.service import (
     AdminBootstrapError,
     AdminBootstrapReason,
     ensure_initial_admin,
 )
-from app.core.config import Settings
-from app.core.security import verify_password
+from chatbot.core.config import Settings
+from chatbot.core.security import verify_password
 
 pytestmark = pytest.mark.usefixtures("isolated_env_file_directory")
 

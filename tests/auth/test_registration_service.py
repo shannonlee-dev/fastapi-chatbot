@@ -7,10 +7,10 @@ from sqlalchemy import func, select
 from sqlalchemy.inspection import inspect
 from sqlalchemy.orm import Session
 
-import app.auth.service as service_module
-from app.auth.models import USER_ROLE, User
-from app.auth.service import RegistrationError, RegistrationReason, register_user
-from app.core.security import verify_password
+import chatbot.auth.service as service_module
+from chatbot.auth.models import USER_ROLE, User
+from chatbot.auth.service import RegistrationError, RegistrationReason, register_user
+from chatbot.core.security import verify_password
 
 
 def test_register_user_trims_username_hashes_password_and_commits(

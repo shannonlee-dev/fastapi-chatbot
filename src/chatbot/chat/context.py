@@ -11,7 +11,7 @@ from openai.types.chat import (
     ChatCompletionUserMessageParam,
 )
 
-from app.chat.models import ChatExchange
+from chatbot.chat.models import ChatExchange
 
 SYSTEM_PROMPT = (
     "You are a helpful assistant. "

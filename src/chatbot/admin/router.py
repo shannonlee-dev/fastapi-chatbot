@@ -9,13 +9,13 @@ from fastapi import APIRouter, Depends, Request
 from fastapi.responses import HTMLResponse, Response
 from sqlalchemy.orm import Session
 
-from app.admin.errors import AdminReadError
-from app.admin.service import list_admin_chat_operation_metadata
-from app.auth.dependencies import require_admin
-from app.core.database import get_db
-from app.core.request_id import get_request_id
-from app.ui.responses import prevent_browser_caching
-from app.ui.templating import templates
+from chatbot.admin.errors import AdminReadError
+from chatbot.admin.service import list_admin_chat_operation_metadata
+from chatbot.auth.dependencies import require_admin
+from chatbot.core.database import get_db
+from chatbot.core.request_id import get_request_id
+from chatbot.ui.responses import prevent_browser_caching
+from chatbot.ui.templating import templates
 
 router = APIRouter()
 logger = logging.getLogger(__name__)

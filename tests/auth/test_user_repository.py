@@ -4,8 +4,8 @@ from __future__ import annotations
 
 from sqlalchemy.orm import Session
 
-from app.auth.models import ADMIN_ROLE, USER_ROLE
-from app.auth.repository import SqlAlchemyUserRepository
+from chatbot.auth.models import ADMIN_ROLE, USER_ROLE
+from chatbot.auth.repository import SqlAlchemyUserRepository
 
 
 def test_create_user_flushes_without_committing(db: Session) -> None:

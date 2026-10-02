@@ -18,12 +18,12 @@ from pydantic import SecretStr
 from sqlalchemy import inspect
 from sqlalchemy.orm import Session
 
-from app.auth.models import ADMIN_ROLE, User
-from app.auth.repository import create_user
-from app.chat.models import ChatExchange
-from app.core import config as config_module
-from app.core.config import Settings
-from app.core.database import get_db
+from chatbot.auth.models import ADMIN_ROLE, User
+from chatbot.auth.repository import create_user
+from chatbot.chat.models import ChatExchange
+from chatbot.core import config as config_module
+from chatbot.core.config import Settings
+from chatbot.core.database import get_db
 
 
 @pytest.fixture
@@ -38,12 +38,12 @@ def main_module(monkeypatch: pytest.MonkeyPatch) -> Generator[ModuleType, None, 
             admin_initial_password=SecretStr("evaluation-password"),
         ),
     )
-    sys.modules.pop("app.main", None)
-    module = importlib.import_module("app.main")
+    sys.modules.pop("chatbot.main", None)
+    module = importlib.import_module("chatbot.main")
     try:
         yield module
     finally:
-        sys.modules.pop("app.main", None)
+        sys.modules.pop("chatbot.main", None)
 
 
 @pytest.fixture
@@ -76,7 +76,7 @@ def client(app: FastAPI) -> Generator[TestClient, None, None]:
 
 
 def _seed_users(db: Session) -> tuple[User, User]:
-    from app.core.security import hash_password
+    from chatbot.core.security import hash_password
 
     password_hash = hash_password("test-password")
     user = create_user(db=db, username="evaluation-user", password_hash=password_hash)
@@ -161,7 +161,7 @@ def test_admin_chat_contract_projection_history_and_visibility(
     )
     db.commit()
 
-    from app.admin.repository import SqlAlchemyAdminRepository
+    from chatbot.admin.repository import SqlAlchemyAdminRepository
 
     rows = SqlAlchemyAdminRepository(db=db).list_chat_operation_metadata()
     row_by_exchange_id = {row.chat_exchange_id: row for row in rows}
@@ -285,7 +285,7 @@ def test_admin_chat_contract_request_id_matches_persisted_exchange(
     caplog: pytest.LogCaptureFixture,
 ) -> None:
     _user, _admin = _seed_users(db)
-    import app.chat.service as chat_service
+    import chatbot.chat.service as chat_service
 
     class FakeOpenAIClient:
         def __init__(self) -> None:
@@ -311,7 +311,7 @@ def test_admin_chat_contract_request_id_matches_persisted_exchange(
     monkeypatch.setattr(chat_service, "create_openai_client", FakeOpenAIClient)
     monkeypatch.setattr(chat_service, "get_openai_model", lambda: "evaluation-model")
     _login(client, "evaluation-user")
-    with caplog.at_level("INFO", logger="app.chat.service"):
+    with caplog.at_level("INFO", logger="chatbot.chat.service"):
         response = client.post(
             "/api/chat",
             json={"message": "request scoped question"},

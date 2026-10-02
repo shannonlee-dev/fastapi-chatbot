@@ -15,23 +15,27 @@ from fastapi.exceptions import RequestValidationError
 from fastapi.responses import HTMLResponse, JSONResponse, Response
 from sqlalchemy.orm import Session
 
-from app.auth.dependencies import get_current_user_id
-from app.chat.errors import (
+from chatbot.auth.dependencies import get_current_user_id
+from chatbot.chat.errors import (
     AppError,
     ChatGenerationError,
     ChatPersistenceError,
     ChatTimeoutError,
 )
-from app.chat.i18n import get_message
-from app.chat.schemas import (
+from chatbot.chat.i18n import get_message
+from chatbot.chat.schemas import (
     ChatExchangeResponse,
     ChatRequest,
     ChatResponse,
     ErrorResponse,
 )
-from app.chat.service import get_chat_exchange, list_chat_exchange_history, process_chat
-from app.core.database import get_db
-from app.core.request_id import REQUEST_ID_HEADER, get_request_id
+from chatbot.chat.service import (
+    get_chat_exchange,
+    list_chat_exchange_history,
+    process_chat,
+)
+from chatbot.core.database import get_db
+from chatbot.core.request_id import REQUEST_ID_HEADER, get_request_id
 
 router = APIRouter()
 

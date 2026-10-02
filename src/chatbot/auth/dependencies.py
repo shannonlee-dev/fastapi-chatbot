@@ -8,9 +8,9 @@ from typing import Annotated
 from fastapi import Depends, HTTPException, Request, status
 from sqlalchemy.orm import Session
 
-from app.auth.models import ADMIN_ROLE
-from app.auth.repository import get_user_by_id
-from app.core.database import get_db
+from chatbot.auth.models import ADMIN_ROLE
+from chatbot.auth.repository import get_user_by_id
+from chatbot.core.database import get_db
 
 SESSION_USER_ID_KEY = "user_id"
 

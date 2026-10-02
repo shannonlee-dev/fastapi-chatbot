@@ -10,7 +10,7 @@ from sqlalchemy import create_engine, event
 from sqlalchemy.engine import URL, Engine, make_url
 from sqlalchemy.orm import DeclarativeBase, Session, sessionmaker
 
-from app.core.config import settings
+from chatbot.core.config import settings
 
 SQLITE_BACKEND_NAME = "sqlite"
 

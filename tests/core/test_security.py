@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import pytest
 
-from app.core.security import hash_password, verify_password
+from chatbot.core.security import hash_password, verify_password
 
 _VALID_SALT_HEX = "00" * 16
 _VALID_DERIVED_KEY_HEX = "00" * 32

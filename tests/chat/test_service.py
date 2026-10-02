@@ -12,19 +12,19 @@ import pytest
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-import app.chat.service as service_module
-from app.auth.models import User
-from app.chat.context import SYSTEM_PROMPT, ChatMessage
-from app.chat.errors import (
+import chatbot.chat.service as service_module
+from chatbot.auth.models import User
+from chatbot.chat.context import SYSTEM_PROMPT, ChatMessage
+from chatbot.chat.errors import (
     ChatConfigurationError,
     ChatGenerationError,
     ChatInvalidResponseError,
     ChatPersistenceError,
     ChatTimeoutError,
 )
-from app.chat.models import ChatExchange
-from app.chat.repository import SqlAlchemyChatExchangeRepository
-from app.chat.service import (
+from chatbot.chat.models import ChatExchange
+from chatbot.chat.repository import SqlAlchemyChatExchangeRepository
+from chatbot.chat.service import (
     AnswerGenerator,
     ChatService,
     get_chat_exchange,
@@ -256,7 +256,7 @@ def test_service_preserves_message_normalized_by_http_boundary(
     question = "  SELECT stack api-key Cookie internal error_message  "
     request_id = "success-request"
 
-    with caplog.at_level("INFO", logger="app.chat.service"):
+    with caplog.at_level("INFO", logger="chatbot.chat.service"):
         result = asyncio.run(
             service.execute(
                 user_id=user_id,
@@ -336,7 +336,7 @@ def test_generation_error_persists_safe_failure_and_propagates(
     request_id = f"failure-request-{record_message}"
 
     with (
-        caplog.at_level("INFO", logger="app.chat.service"),
+        caplog.at_level("INFO", logger="chatbot.chat.service"),
         pytest.raises(type(error)),
     ):
         asyncio.run(
@@ -376,7 +376,7 @@ def test_unexpected_generator_error_persists_internal_failure_and_propagates(
     service = _create_service(db, UnexpectedErrorGenerator())
 
     with (
-        caplog.at_level("INFO", logger="app.chat.service"),
+        caplog.at_level("INFO", logger="chatbot.chat.service"),
         pytest.raises(RuntimeError, match="unexpected generator failure"),
     ):
         asyncio.run(
@@ -452,7 +452,7 @@ def test_save_failure_does_not_persist_failure_record_and_logs_safely(
     request_id = "save-failure-request"
 
     with (
-        caplog.at_level("INFO", logger="app.chat.service"),
+        caplog.at_level("INFO", logger="chatbot.chat.service"),
         pytest.raises(ChatPersistenceError),
     ):
         asyncio.run(
@@ -518,7 +518,7 @@ def test_production_wrapper_logs_safely_before_client_configuration_failure(
     monkeypatch.setattr(service_module, "create_openai_client", fail_client_creation)
 
     with (
-        caplog.at_level("INFO", logger="app.chat.service"),
+        caplog.at_level("INFO", logger="chatbot.chat.service"),
         pytest.raises(ChatConfigurationError),
     ):
         asyncio.run(

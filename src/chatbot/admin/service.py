@@ -4,13 +4,13 @@ from __future__ import annotations
 
 from sqlalchemy.orm import Session
 
-from app.admin.errors import AdminReadError
-from app.admin.repository import (
+from chatbot.admin.errors import AdminReadError
+from chatbot.admin.repository import (
     AdminChatOperationMetadataRow,
     AdminRepository,
     SqlAlchemyAdminRepository,
 )
-from app.admin.schemas import AdminChatOperationMetadataItem
+from chatbot.admin.schemas import AdminChatOperationMetadataItem
 
 
 def list_admin_chat_operation_metadata(

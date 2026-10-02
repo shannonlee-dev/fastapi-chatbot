@@ -8,23 +8,23 @@ from fastapi import APIRouter, Depends, Form, Request, status
 from fastapi.responses import HTMLResponse, RedirectResponse, Response
 from sqlalchemy.orm import Session
 
-from app.auth.dependencies import (
+from chatbot.auth.dependencies import (
     AuthenticatedUser,
     clear_session_user_id,
     get_optional_authenticated_user,
     require_authenticated_user,
     set_session_user_id,
 )
-from app.auth.service import (
+from chatbot.auth.service import (
     RegistrationError,
     RegistrationReason,
     authenticate_user,
     register_user,
 )
-from app.chat.service import list_chat_exchange_history
-from app.core.database import get_db
-from app.ui.responses import prevent_browser_caching
-from app.ui.templating import templates
+from chatbot.chat.service import list_chat_exchange_history
+from chatbot.core.database import get_db
+from chatbot.ui.responses import prevent_browser_caching
+from chatbot.ui.templating import templates
 
 # Map registration failures to safe, user-facing messages.
 _REGISTRATION_ERROR_MESSAGES = {

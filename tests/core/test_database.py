@@ -9,7 +9,7 @@ from sqlalchemy import create_engine, inspect, text
 from sqlalchemy.engine import Engine, make_url
 from sqlalchemy.orm import Session
 
-import app.core.database as database_module
+import chatbot.core.database as database_module
 
 
 class TrackingSession(Session):

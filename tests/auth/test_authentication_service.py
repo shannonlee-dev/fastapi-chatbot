@@ -5,10 +5,10 @@ from __future__ import annotations
 import pytest
 from sqlalchemy.orm import Session
 
-from app.auth.models import User
-from app.auth.repository import create_user
-from app.auth.service import authenticate_user
-from app.core.security import hash_password
+from chatbot.auth.models import User
+from chatbot.auth.repository import create_user
+from chatbot.auth.service import authenticate_user
+from chatbot.core.security import hash_password
 
 _PASSWORD = "  correct-password  "
 

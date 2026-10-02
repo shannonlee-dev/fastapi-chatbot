@@ -5,7 +5,7 @@ from __future__ import annotations
 from sqlalchemy import inspect
 from sqlalchemy.orm import Session
 
-from app.auth.models import ADMIN_ROLE, USER_ROLE, User
+from chatbot.auth.models import ADMIN_ROLE, USER_ROLE, User
 
 
 def test_user_role_defaults_to_user(db: Session) -> None:

@@ -17,15 +17,15 @@ from fastapi.testclient import TestClient
 from pydantic import ValidationError
 from sqlalchemy.orm import Session
 
-from app.auth.dependencies import (
+from chatbot.auth.dependencies import (
     AuthenticatedUser,
     get_current_user_id,
     require_authenticated_user,
 )
-from app.core import config as config_module
-from app.core.config import Settings
-from app.core.database import Base, get_db
-from app.core.request_id import REQUEST_ID_HEADER
+from chatbot.core import config as config_module
+from chatbot.core.config import Settings
+from chatbot.core.database import Base, get_db
+from chatbot.core.request_id import REQUEST_ID_HEADER
 
 
 def _settings(
@@ -65,8 +65,8 @@ def main_module(monkeypatch: pytest.MonkeyPatch) -> Generator[ModuleType, None, 
     root_logger = logging.getLogger()
     previous_level = root_logger.level
     monkeypatch.setattr(config_module, "settings", _settings())
-    sys.modules.pop("app.main", None)
-    module = importlib.import_module("app.main")
+    sys.modules.pop("chatbot.main", None)
+    module = importlib.import_module("chatbot.main")
     monkeypatch.setattr(module, "init_db", lambda: None)
     monkeypatch.setattr(module, "SessionLocal", lambda: nullcontext(object()))
     monkeypatch.setattr(module, "ensure_initial_admin", lambda **_kwargs: None)
@@ -74,7 +74,7 @@ def main_module(monkeypatch: pytest.MonkeyPatch) -> Generator[ModuleType, None, 
         yield module
     finally:
         root_logger.setLevel(previous_level)
-        sys.modules.pop("app.main", None)
+        sys.modules.pop("chatbot.main", None)
 
 
 @pytest.mark.parametrize("session_secret", [None, "   "])
@@ -103,6 +103,7 @@ def test_create_app_registers_ui_router_once(main_module: ModuleType) -> None:
     assert len(matching_routes) == 1
 
 
+@pytest.mark.smoke
 def test_create_app_mounts_static_files_once(main_module: ModuleType) -> None:
     application = main_module.create_app(_settings())
 
@@ -116,6 +117,7 @@ def test_create_app_mounts_static_files_once(main_module: ModuleType) -> None:
     assert matching_routes[0].name == "static"
 
 
+@pytest.mark.smoke
 def test_health_initializes_registered_models_before_serving_requests(
     main_module: ModuleType,
     monkeypatch: pytest.MonkeyPatch,
@@ -365,7 +367,7 @@ def test_chat_history_failure_uses_safe_html_error_boundary(
     main_module: ModuleType,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    from app.ui import router as ui_router_module
+    from chatbot.ui import router as ui_router_module
 
     application = main_module.create_app(_settings())
     db_session = object()

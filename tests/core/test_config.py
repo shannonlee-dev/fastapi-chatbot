@@ -7,7 +7,7 @@ import logging
 import pytest
 from pydantic import ValidationError
 
-from app.core.config import Settings
+from chatbot.core.config import Settings
 
 pytestmark = pytest.mark.usefixtures("isolated_env_file_directory")
 

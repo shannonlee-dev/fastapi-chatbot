@@ -10,11 +10,11 @@ import pytest
 from sqlalchemy.engine import Engine
 from sqlalchemy.orm import Session
 
-from app.admin.repository import (
+from chatbot.admin.repository import (
     AdminChatOperationMetadataRow,
     SqlAlchemyAdminRepository,
 )
-from app.chat.models import ChatExchange
+from chatbot.chat.models import ChatExchange
 
 
 def _add_exchange(

@@ -8,7 +8,7 @@ import pytest
 from fastapi import FastAPI, Request
 from fastapi.testclient import TestClient
 
-from app.core.request_id import (
+from chatbot.core.request_id import (
     REQUEST_ID_HEADER,
     RequestIdMiddleware,
     get_request_id,

@@ -9,8 +9,8 @@ from typing import Protocol
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from app.auth.models import User
-from app.chat.models import ChatExchange
+from chatbot.auth.models import User
+from chatbot.chat.models import ChatExchange
 
 
 @dataclass(frozen=True)

@@ -13,21 +13,21 @@ from fastapi.exceptions import RequestValidationError
 from fastapi.testclient import TestClient
 from sqlalchemy.orm import Session
 
-import app.chat.i18n as i18n_module
-import app.chat.router as router_module
-from app.auth.dependencies import get_current_user_id
-from app.auth.models import User
-from app.auth.repository import create_user
-from app.chat.errors import (
+import chatbot.chat.i18n as i18n_module
+import chatbot.chat.router as router_module
+from chatbot.auth.dependencies import get_current_user_id
+from chatbot.auth.models import User
+from chatbot.auth.repository import create_user
+from chatbot.chat.errors import (
     AppError,
     ChatGenerationError,
     ChatPersistenceError,
     ChatTimeoutError,
 )
-from app.chat.models import ChatExchange
-from app.chat.service import ChatResult
-from app.core.database import get_db
-from app.core.request_id import REQUEST_ID_HEADER, RequestIdMiddleware
+from chatbot.chat.models import ChatExchange
+from chatbot.chat.service import ChatResult
+from chatbot.core.database import get_db
+from chatbot.core.request_id import REQUEST_ID_HEADER, RequestIdMiddleware
 
 
 @pytest.fixture
@@ -393,7 +393,7 @@ def test_unhandled_error_log_hides_internal_error_detail(
 
     monkeypatch.setattr(router_module, "process_chat", failing_process_chat)
 
-    with caplog.at_level("ERROR", logger="app.chat.router"):
+    with caplog.at_level("ERROR", logger="chatbot.chat.router"):
         response = authenticated_client.post("/api/chat", json={"message": "question"})
 
     assert response.status_code == 500

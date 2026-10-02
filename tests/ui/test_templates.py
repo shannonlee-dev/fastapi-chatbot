@@ -6,14 +6,14 @@ from pathlib import Path
 
 import pytest
 
-from app.chat.service import ChatExchangeHistoryItem
-from app.ui.templating import templates
+from chatbot.chat.service import ChatExchangeHistoryItem
+from chatbot.ui.templating import templates
 
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
-STYLES_PATH = PROJECT_ROOT / "app" / "ui" / "static" / "styles.css"
-CHAT_SCRIPT_PATH = PROJECT_ROOT / "app" / "ui" / "static" / "chat.js"
+STYLES_PATH = PROJECT_ROOT / "src" / "chatbot" / "ui" / "static" / "styles.css"
+CHAT_SCRIPT_PATH = PROJECT_ROOT / "src" / "chatbot" / "ui" / "static" / "chat.js"
 PAGE_LIFECYCLE_SCRIPT_PATH = (
-    PROJECT_ROOT / "app" / "ui" / "static" / "page-lifecycle.js"
+    PROJECT_ROOT / "src" / "chatbot" / "ui" / "static" / "page-lifecycle.js"
 )
 
 

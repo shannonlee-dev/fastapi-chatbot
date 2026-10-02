@@ -12,22 +12,22 @@ from fastapi.exceptions import RequestValidationError
 from starlette.middleware.sessions import SessionMiddleware
 from starlette.staticfiles import StaticFiles
 
-from app.admin.router import router as admin_router
-from app.auth.models import User
-from app.auth.service import ensure_initial_admin
-from app.chat.errors import AppError
-from app.chat.models import ChatExchange
-from app.chat.router import (
+from chatbot.admin.router import router as admin_router
+from chatbot.auth.models import User
+from chatbot.auth.service import ensure_initial_admin
+from chatbot.chat.errors import AppError
+from chatbot.chat.models import ChatExchange
+from chatbot.chat.router import (
     app_error_handler,
     http_exception_handler,
     unhandled_exception_handler,
     validation_exception_handler,
 )
-from app.chat.router import router as chat_router
-from app.core.config import Settings, settings
-from app.core.database import SessionLocal, init_db
-from app.core.request_id import RequestIdMiddleware
-from app.ui.router import router as ui_router
+from chatbot.chat.router import router as chat_router
+from chatbot.core.config import Settings, settings
+from chatbot.core.database import SessionLocal, init_db
+from chatbot.core.request_id import RequestIdMiddleware
+from chatbot.ui.router import router as ui_router
 
 SESSION_MAX_AGE_SECONDS = 28_800
 _REGISTERED_MODELS = (User, ChatExchange)

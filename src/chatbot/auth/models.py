@@ -7,8 +7,8 @@ from datetime import datetime
 from sqlalchemy import Integer, String
 from sqlalchemy.orm import Mapped, mapped_column
 
-from app.core.database import Base
-from app.core.db_types import UTCDateTime, utc_now
+from chatbot.core.database import Base
+from chatbot.core.db_types import UTCDateTime, utc_now
 
 USER_ROLE = "user"
 ADMIN_ROLE = "admin"

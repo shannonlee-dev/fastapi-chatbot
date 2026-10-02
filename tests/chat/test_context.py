@@ -7,8 +7,8 @@ from collections.abc import Sequence
 import pytest
 from openai.types.chat import ChatCompletionMessageParam
 
-from app.chat.context import SYSTEM_PROMPT, build_context_messages
-from app.chat.models import ChatExchange
+from chatbot.chat.context import SYSTEM_PROMPT, build_context_messages
+from chatbot.chat.models import ChatExchange
 
 
 def test_build_context_orders_history_oldest_first_and_appends_question() -> None:

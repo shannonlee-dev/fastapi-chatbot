@@ -10,14 +10,14 @@ from fastapi import FastAPI, Response
 from fastapi.testclient import TestClient
 from sqlalchemy.orm import Session
 
-import app.admin.router as router_module
-from app.admin.errors import AdminReadError
-from app.admin.schemas import AdminChatOperationMetadataItem
-from app.auth.models import ADMIN_ROLE
-from app.auth.repository import create_user
-from app.chat.models import ChatExchange
-from app.core.database import get_db
-from app.core.request_id import RequestIdMiddleware
+import chatbot.admin.router as router_module
+from chatbot.admin.errors import AdminReadError
+from chatbot.admin.schemas import AdminChatOperationMetadataItem
+from chatbot.auth.models import ADMIN_ROLE
+from chatbot.auth.repository import create_user
+from chatbot.chat.models import ChatExchange
+from chatbot.core.database import get_db
+from chatbot.core.request_id import RequestIdMiddleware
 
 
 @pytest.fixture

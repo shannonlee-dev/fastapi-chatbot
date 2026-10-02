@@ -17,9 +17,9 @@ os.environ.setdefault("SESSION_SECRET", "test-session-secret-for-collection")
 os.environ.setdefault("OPENAI_API_KEY", "test-openai-api-key-for-collection")
 os.environ.setdefault("ADMIN_INITIAL_PASSWORD", "test-admin-password-for-collection")
 
-from app.auth.models import User
-from app.chat.models import ChatExchange  # noqa: F401
-from app.core.database import Base
+from chatbot.auth.models import User
+from chatbot.chat.models import ChatExchange  # noqa: F401
+from chatbot.core.database import Base
 
 
 @pytest.fixture

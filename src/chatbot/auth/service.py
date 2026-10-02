@@ -9,10 +9,10 @@ from typing import NoReturn
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
-from app.auth.models import ADMIN_ROLE, User
-from app.auth.repository import create_user, get_admin_user, get_user_by_username
-from app.core.config import Settings
-from app.core.security import hash_password, verify_password
+from chatbot.auth.models import ADMIN_ROLE, User
+from chatbot.auth.repository import create_user, get_admin_user, get_user_by_username
+from chatbot.core.config import Settings
+from chatbot.core.security import hash_password, verify_password
 
 MIN_USERNAME_LENGTH = 3
 MAX_USERNAME_LENGTH = 30
