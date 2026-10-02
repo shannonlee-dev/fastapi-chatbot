@@ -30,7 +30,7 @@ testpaths = ["tests"]
 [tool.pyright]
 venvPath = "."
 venv = ".venv"
-pythonVersion = "3.12"
+pythonVersion = "3.11"
 strict = [
     "app/chat/context.py",
     "app/chat/openai_client.py",

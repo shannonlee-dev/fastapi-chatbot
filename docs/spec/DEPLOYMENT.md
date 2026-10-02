@@ -40,7 +40,7 @@ PORT=
 1. Python dependency를 설치합니다.
 
    ```bash
-   uv sync
+   uv sync --frozen
    ```
 
 2. `.env.example`을 `.env`로 복사합니다. Application 시작에는 `SESSION_SECRET`을, Chat 사용에는

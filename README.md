@@ -36,7 +36,7 @@ FastAPI, SQLite, OpenAI API를 하나의 web application으로 통합한 사용�
 [`uv`](https://docs.astral.sh/uv/)가 설치된 환경에서 다음 명령을 실행합니다.
 
 ```bash
-uv sync
+uv sync --frozen
 ```
 
 ### 2. Environment variable 설정
@@ -432,5 +432,24 @@ uv run ruff format --check .
 uv run pyright
 uv run pytest
 ```
+
+Node.js 22 이상에서 UI 검사를 추가로 실행합니다. Node dependency는 테스트 전용이며
+Application의 frontend build 과정은 없습니다.
+
+```bash
+npm ci --ignore-scripts
+npm run test:ui
+uv run --frozen python scripts/check_docs.py
+```
+
+UI 검사는 실제 Jinja2 Chat 화면을 jsdom에 rendering하고 글자 수·전송 경계·중복 요청 방지·
+draft 유지·text rendering·오류 복구·Enter/IME·복원 event 처리를 실행합니다. 복원 검사는
+reload 요청을 모의 처리하며 실제 Browser의 BFCache를 생성하지 않습니다. API와 UI의 글자 수는
+Unicode code point 기준이며 이모지 1000개도 같은 경계로 처리합니다. 실제 Browser의 배치·
+BFCache나 OpenAI 응답·배포 상태를 검증하는 검사는 별도입니다.
+
+GitHub Actions는 Python 3.11·3.12·3.13의 잠금 파일 설치, 문서·Ruff·Pyright·pytest를
+검사하고 Node 22의 DOM suite도 실행하도록 구성합니다. Local 기본 interpreter는
+`.python-version`의 3.13이며 Pyright는 지원 최소 버전 3.11의 문법을 기준으로 분석합니다.
 
 상세 요구사항과 설계 계약은 [`docs/spec/SPEC.md`](docs/spec/SPEC.md)에서 확인할 수 있습니다.
